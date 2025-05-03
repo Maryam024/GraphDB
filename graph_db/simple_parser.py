@@ -35,6 +35,11 @@ class SimpleCypherParser:
             return self._execute_create_constraint(query)
         elif query_upper.startswith("DROP CONSTRAINT"):
             return self._execute_drop_constraint(query)
+        # Handle index commands
+        elif query_upper.startswith("CREATE INDEX"):
+            return self._execute_create_index(query)
+        elif query_upper.startswith("DROP INDEX"):
+            return self._execute_drop_index(query)
         
         # Start an auto-transaction if none is active
         auto_transaction = False
@@ -246,6 +251,110 @@ class SimpleCypherParser:
                 return [{"success": f"Dropped unique constraint on {label}.{property_name}"}]
             else:
                 return [{"message": f"No constraint found on {label}.{property_name}"}]
+            
+        except Exception as e:
+            # Rollback on error
+            if auto_transaction:
+                self.transaction.rollback()
+                self.active_transaction = False
+            raise e
+            
+    def _execute_create_index(self, query):
+        """Execute a CREATE INDEX query
+        
+        Syntax: CREATE INDEX ON :Label(property)
+        """
+        # Parse the CREATE INDEX statement
+        index_pattern = r"CREATE\s+INDEX\s+ON\s+:(\w+)\((\w+)\)"
+        index_match = re.search(index_pattern, query, re.IGNORECASE)
+        
+        if not index_match:
+            raise ValueError("Invalid index syntax. Expected: CREATE INDEX ON :Label(property)")
+        
+        # Extract label and property
+        label = index_match.group(1)
+        property_name = index_match.group(2)
+        
+        # Start an auto-transaction for this operation
+        auto_transaction = False
+        if not self.active_transaction:
+            self.transaction.begin()
+            self.active_transaction = True
+            auto_transaction = True
+        
+        try:
+            # Create the index
+            logging.debug(f"Creating index on {label}.{property_name}")
+            result = self.db.create_index(label, property_name)
+            
+            # Log the operation
+            if self.active_transaction:
+                self.transaction.log_operation("CREATE_INDEX", {
+                    "label": label,
+                    "property": property_name
+                })
+            
+            # Commit if this was an auto-transaction (indexes modify schema)
+            if auto_transaction:
+                self.transaction.commit()
+                self.active_transaction = False
+            
+            if result:
+                return [{"success": f"Created index on {label}.{property_name}"}]
+            else:
+                return [{"message": f"Index on {label}.{property_name} already exists"}]
+            
+        except Exception as e:
+            # Rollback on error
+            if auto_transaction:
+                self.transaction.rollback()
+                self.active_transaction = False
+            raise e
+            
+    def _execute_drop_index(self, query):
+        """Execute a DROP INDEX query
+        
+        Syntax: DROP INDEX ON :Label(property)
+        """
+        # Parse the DROP INDEX statement
+        index_pattern = r"DROP\s+INDEX\s+ON\s+:(\w+)\((\w+)\)"
+        index_match = re.search(index_pattern, query, re.IGNORECASE)
+        
+        if not index_match:
+            raise ValueError("Invalid index syntax. Expected: DROP INDEX ON :Label(property)")
+        
+        # Extract label and property
+        label = index_match.group(1)
+        property_name = index_match.group(2)
+        
+        # Start an auto-transaction for this operation
+        auto_transaction = False
+        if not self.active_transaction:
+            self.transaction.begin()
+            self.active_transaction = True
+            auto_transaction = True
+        
+        try:
+            # Drop the index
+            logging.debug(f"Dropping index on {label}.{property_name}")
+            result = self.db.drop_index(label, property_name)
+            
+            # Log the operation
+            if self.active_transaction:
+                self.transaction.log_operation("DROP_INDEX", {
+                    "label": label,
+                    "property": property_name
+                })
+            
+            # Commit if this was an auto-transaction (indexes modify schema)
+            if auto_transaction:
+                self.transaction.commit()
+                self.active_transaction = False
+            
+            if result:
+                return [{"success": f"Dropped index on {label}.{property_name}"}]
+            else:
+                return [{"message": f"No index found on {label}.{property_name}"}]
             
         except Exception as e:
             # Rollback on error
@@ -471,8 +580,28 @@ class SimpleCypherParser:
             # Debug logging
             logging.debug(f"Looking for {var_name} with props: {props}")
             
-            # Find matching nodes
+            # Find matching nodes - Check if we can use an index for optimization
             matching_nodes = []
+            
+            # Check if we can use an index for this query
+            if node_type and len(props) == 1:
+                # Only one property and we have a label - check if it's indexed
+                prop_name, prop_value = next(iter(props.items()))
+                if (node_type, prop_name) in self.db.indexed_properties:
+                    # Use the index for faster lookup
+                    logging.debug(f"Using index on {node_type}.{prop_name} for efficient lookup")
+                    matching_nodes = self.db.find_nodes_by_index(node_type, prop_name, prop_value)
+                    variable_nodes[var_name] = matching_nodes
+                    
+                    # Extra debug info
+                    if not matching_nodes:
+                        logging.debug(f"No nodes found using index on {node_type}.{prop_name}")
+                    else:
+                        logging.debug(f"Found {len(matching_nodes)} nodes using index")
+                    
+                    continue  # Skip the full scan for this variable
+            
+            # If we can't use an index or need to check multiple properties, do a full scan
             for node in self.db.nodes.values():
                 # Check node type
                 if node_type and node_type not in node.labels:
@@ -575,8 +704,21 @@ class SimpleCypherParser:
                     for key, value in prop_items:
                         props[key] = self._parse_value(value.strip())
                 
-                # Find matching nodes
+                # Find matching nodes - Check if we can use an index for optimization
                 matching_nodes = []
+                
+                # Check if we can use an index for this query
+                if node_type and len(props) == 1:
+                    # Only one property and we have a label - check if it's indexed
+                    prop_name, prop_value = next(iter(props.items()))
+                    if (node_type, prop_name) in self.db.indexed_properties:
+                        # Use the index for faster lookup
+                        logging.debug(f"Using index on {node_type}.{prop_name} for efficient lookup")
+                        matching_nodes = self.db.find_nodes_by_index(node_type, prop_name, prop_value)
+                        variable_nodes[var_name] = matching_nodes
+                        continue
+                
+                # If we can't use an index, do a full scan
                 for node in self.db.nodes.values():
                     # Check node type
                     if node_type and node_type not in node.labels:
