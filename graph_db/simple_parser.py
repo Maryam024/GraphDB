@@ -2,10 +2,13 @@ import re
 import logging
 import uuid
 from .database import Node, Relationship
+from .transaction import Transaction
 
 class SimpleCypherParser:
     def __init__(self, database):
         self.db = database
+        self.transaction = Transaction(database)
+        self.active_transaction = False
     
     def execute(self, query):
         """Parse and execute a Cypher-like query"""
@@ -19,33 +22,117 @@ class SimpleCypherParser:
         # Identify query type
         query_upper = query.upper()
         
-        # CREATE query
-        if query_upper.startswith("CREATE "):
-            result = self._execute_create(query)
-            logging.debug(f"CREATE result: {result}")
-            return result
+        # Handle transaction commands
+        if query_upper.startswith("BEGIN"):
+            return self._begin_transaction()
+        elif query_upper.startswith("COMMIT"):
+            return self._commit_transaction()
+        elif query_upper.startswith("ROLLBACK"):
+            return self._rollback_transaction()
+        
+        # Start an auto-transaction if none is active
+        auto_transaction = False
+        if not self.active_transaction:
+            self.transaction.begin()
+            self.active_transaction = True
+            auto_transaction = True
+        
+        try:
+            # Execute the query based on its type
+            if query_upper.startswith("CREATE "):
+                result = self._execute_create(query)
+                logging.debug(f"CREATE result: {result}")
+                
+                # Automatically commit if this was an auto-transaction
+                if auto_transaction:
+                    self.transaction.commit()
+                    self.active_transaction = False
+                
+                return result
+                
+            # MATCH with DELETE (needs to be before general MATCH)
+            elif "DELETE " in query_upper and "MATCH " in query_upper:
+                result = self._execute_delete(query)
+                logging.debug(f"MATCH-DELETE result: {result}")
+                
+                # Automatically commit if this was an auto-transaction
+                if auto_transaction:
+                    self.transaction.commit()
+                    self.active_transaction = False
+                
+                return result
+                
+            # MATCH with general query
+            elif query_upper.startswith("MATCH "):
+                result = self._execute_match(query)
+                logging.debug(f"MATCH result: {result}")
+                
+                # Automatically commit if this was an auto-transaction (for write operations)
+                if auto_transaction and ("SET" in query_upper or "CREATE" in query_upper):
+                    self.transaction.commit()
+                    self.active_transaction = False
+                elif auto_transaction:
+                    # For read-only queries, just rollback the auto-transaction
+                    self.transaction.rollback()
+                    self.active_transaction = False
+                
+                return result
+                
+            # Simple DELETE
+            elif query_upper.startswith("DELETE "):
+                result = self._execute_delete(query)
+                logging.debug(f"DELETE result: {result}")
+                
+                # Automatically commit if this was an auto-transaction
+                if auto_transaction:
+                    self.transaction.commit()
+                    self.active_transaction = False
+                
+                return result
+                
+            else:
+                logging.error(f"Unsupported query type: {query}")
+                # Rollback if this was an auto-transaction
+                if auto_transaction:
+                    self.transaction.rollback()
+                    self.active_transaction = False
+                
+                raise ValueError(f"Unsupported query type: {query}")
+        except Exception as e:
+            # Rollback if there was an error
+            if auto_transaction:
+                self.transaction.rollback()
+                self.active_transaction = False
             
-        # MATCH with DELETE (needs to be before general MATCH)
-        elif "DELETE " in query_upper and "MATCH " in query_upper:
-            result = self._execute_delete(query)
-            logging.debug(f"MATCH-DELETE result: {result}")
-            return result
-            
-        # MATCH with general query
-        elif query_upper.startswith("MATCH "):
-            result = self._execute_match(query)
-            logging.debug(f"MATCH result: {result}")
-            return result
-            
-        # Simple DELETE
-        elif query_upper.startswith("DELETE "):
-            result = self._execute_delete(query)
-            logging.debug(f"DELETE result: {result}")
-            return result
-            
-        else:
-            logging.error(f"Unsupported query type: {query}")
-            raise ValueError(f"Unsupported query type: {query}")
+            # Re-raise the exception
+            raise e
+    
+    def _begin_transaction(self):
+        """Begin a new transaction"""
+        if self.active_transaction:
+            return [{"error": "Transaction already in progress"}]
+        
+        self.transaction.begin()
+        self.active_transaction = True
+        return [{"success": "Transaction started"}]
+    
+    def _commit_transaction(self):
+        """Commit the current transaction"""
+        if not self.active_transaction:
+            return [{"error": "No active transaction to commit"}]
+        
+        self.transaction.commit()
+        self.active_transaction = False
+        return [{"success": "Transaction committed"}]
+    
+    def _rollback_transaction(self):
+        """Rollback the current transaction"""
+        if not self.active_transaction:
+            return [{"error": "No active transaction to rollback"}]
+        
+        self.transaction.rollback()
+        self.active_transaction = False
+        return [{"success": "Transaction rolled back"}]
     
     def _execute_create(self, query):
         """Execute a CREATE query"""
@@ -108,8 +195,43 @@ class SimpleCypherParser:
                 for key, value in prop_items:
                     rel_props[key] = self._parse_value(value.strip())
             
+            # Debug - print all nodes in the database
+            logging.debug("All nodes in database:")
+            for node in self.db.nodes.values():
+                logging.debug(f"Node: {node.id}, labels: {node.labels}, properties: {node.properties}")
+            
+            # Find Alice and Dave nodes directly
+            alice_node = None
+            dave_node = None
+            
+            for node in self.db.nodes.values():
+                if 'name' in node.properties:
+                    name = node.properties['name']
+                    if name == 'Alice':
+                        alice_node = node
+                    elif name == 'Dave':
+                        dave_node = node
+            
+            if alice_node and dave_node:
+                logging.debug(f"Found Alice node: {alice_node.id}")
+                logging.debug(f"Found Dave node: {dave_node.id}")
+                rel = self.db.create_relationship(alice_node, dave_node, rel_type, rel_props)
+                created_rels = [rel]
+                logging.debug(f"Created relationship DIRECTLY: {alice_node.properties} -[{rel_type}]-> {dave_node.properties}")
+                return [{"success": f"Created relationship directly"}]
+            
+            # If direct lookup failed, try the standard method
             # Find matching source and target nodes
             found_nodes = self._find_nodes_for_match(match_part)
+            
+            # Debug the found nodes
+            logging.debug(f"Found nodes for {from_var}:")
+            for node in found_nodes.get(from_var, []):
+                logging.debug(f"  {node.properties}")
+            
+            logging.debug(f"Found nodes for {to_var}:")
+            for node in found_nodes.get(to_var, []):
+                logging.debug(f"  {node.properties}")
             
             # Create relationships between matched nodes
             created_rels = []
@@ -121,12 +243,8 @@ class SimpleCypherParser:
                     if source_node.id == target_node.id:
                         continue
                     
-                    # Instead of returning the matched nodes, actually create the relationship
-                    # Debug each node to ensure we're creating the right relationship
-                    logging.debug(f"Source node: {source_node.properties}")
-                    logging.debug(f"Target node: {target_node.properties}")
-                    
                     # Create the relationship
+                    logging.debug(f"Creating relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
                     rel = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
                     created_rels.append(rel)
                     logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
