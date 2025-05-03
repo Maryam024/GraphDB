@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Cypher Query</h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-secondary" id="load-examples-btn">
+                        <i data-feather="book-open" class="me-1"></i> Example Queries
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" id="clear-btn">
+                        <i data-feather="trash-2"></i> Clear
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <textarea id="query-input" class="form-control mb-3" rows="5" placeholder="Enter Cypher query..."></textarea>
+                <div class="d-flex justify-content-between">
+                    <button id="execute-btn" class="btn btn-primary">
+                        <i data-feather="play" class="me-1"></i> Execute
+                    </button>
+                    <div>
+                        <button id="save-btn" class="btn btn-outline-success">
+                            <i data-feather="save" class="me-1"></i> Save DB
+                        </button>
+                        <button id="load-btn" class="btn btn-outline-warning">
+                            <i data-feather="upload" class="me-1"></i> Load DB
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Query Results</h5>
+            </div>
+            <div class="card-body">
+                <div id="results-container">
+                    <div class="text-center text-muted py-5">
+                        <i data-feather="database" style="width: 48px; height: 48px;"></i>
+                        <p class="mt-3">Execute a query to see results</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Graph Visualization</h5>
+            </div>
+            <div class="card-body">
+                <div id="graph-container" style="height: 300px; background-color: #21262d; border-radius: 0.25rem;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Cypher Help</h5>
+            </div>
+            <div class="card-body">
+                <h6>Basic Commands</h6>
+                <ul class="mb-3 small">
+                    <li><code>MATCH (n) RETURN n LIMIT 5</code> - Find any 5 nodes</li>
+                    <li><code>MATCH (n:Label) RETURN n</code> - Find nodes with a specific label</li>
+                    <li><code>MATCH (n {prop: 'value'}) RETURN n</code> - Find nodes by property</li>
+                    <li><code>CREATE (:Label {prop: 'value'})</code> - Create a node</li>
+                    <li><code>MATCH (a),(b) WHERE a.prop = 'x' AND b.prop = 'y' CREATE (a)-[:REL_TYPE]->(b)</code> - Create relationship</li>
+                    <li><code>MATCH (n) WHERE n.prop > 25 RETURN n</code> - Filter with WHERE</li>
+                    <li><code>MATCH (a)-[r]->(b) RETURN a,r,b</code> - Match relationships</li>
+                    <li><code>MATCH (n) DELETE n</code> - Delete nodes (and relationships)</li>
+                    <li><code>MATCH (n) SET n.prop = 'value' RETURN n</code> - Update properties</li>
+                </ul>
+                <h6>Example Database</h6>
+                <p class="small">A sample database with Person and Movie nodes is already loaded with relationships between them.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Example Queries Modal -->
+<div class="modal fade" id="examples-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Example Queries</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="list-group" id="examples-list">
+                    <!-- Example queries will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Save/Load Modals -->
+<div class="modal fade" id="save-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Save Database</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="save-filename" class="form-label">Filename</label>
+                    <input type="text" class="form-control" id="save-filename" value="graph_db.json">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirm-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="load-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Load Database</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="load-filename" class="form-label">Filename</label>
+                    <input type="text" class="form-control" id="load-filename" value="graph_db.json">
+                </div>
+                <div class="alert alert-warning">
+                    <i data-feather="alert-triangle" class="me-1"></i>
+                    Loading will replace the current database. This action cannot be undone.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="confirm-load-btn">Load</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% endblock %}

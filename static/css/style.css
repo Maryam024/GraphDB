@@ -1,0 +1,134 @@
+/* Custom styles for graph database UI */
+
+/* Code and query styling */
+#query-input {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9rem;
+    resize: vertical;
+    background-color: #1c2128;
+    color: #e6edf3;
+}
+
+.query-box {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    background-color: #1c2128;
+    border-radius: 0.25rem;
+    padding: 0.75rem;
+    color: #e6edf3;
+    margin-bottom: 1rem;
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+
+.code {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    padding: 0.15rem 0.25rem;
+    background-color: rgba(99, 110, 123, 0.4);
+    border-radius: 0.25rem;
+}
+
+/* Results table styling */
+.results-table {
+    width: 100%;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+}
+
+.results-table table {
+    min-width: 100%;
+    border-collapse: collapse;
+}
+
+.results-table th {
+    background-color: #272e38;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid #6c757d;
+}
+
+.results-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #4a4f55;
+    vertical-align: top;
+}
+
+.results-table tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.results-table pre {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+/* Node and Relationship styling for visualization */
+.node-circle {
+    stroke: #21262d;
+    stroke-width: 2px;
+}
+
+.node-label {
+    font-size: 10px;
+    text-anchor: middle;
+    pointer-events: none;
+    fill: #e6edf3;
+}
+
+.relationship-line {
+    stroke: #6c757d;
+    stroke-width: 1.5px;
+}
+
+.relationship-arrow {
+    fill: #6c757d;
+}
+
+.relationship-label {
+    font-size: 9px;
+    text-anchor: middle;
+    pointer-events: none;
+    fill: #e6edf3;
+    background-color: #21262d;
+}
+
+/* Node property container */
+.node-property {
+    font-size: 8px;
+    fill: #acb5bd;
+}
+
+/* Message boxes */
+.message-box {
+    padding: 1rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.message-error {
+    background-color: rgba(220, 53, 69, 0.2);
+    border-left: 4px solid #dc3545;
+    color: #f8d7da;
+}
+
+.message-success {
+    background-color: rgba(25, 135, 84, 0.2);
+    border-left: 4px solid #198754;
+    color: #d1e7dd;
+}
+
+.message-info {
+    background-color: rgba(13, 110, 253, 0.2);
+    border-left: 4px solid #0d6efd;
+    color: #cfe2ff;
+}
+
+/* Example query list */
+.example-query {
+    cursor: pointer;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.example-query:hover {
+    background-color: #272e38;
+}
