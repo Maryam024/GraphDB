@@ -305,9 +305,8 @@ class CypherParser:
             
             # Find matching paths
             matching_paths = []
-            
-            # Only match specific relationships between specific nodes
-            # instead of getting all relationships of a type and then filtering
+                    
+            # First find all relationships that match our criteria
             for from_node in variable_bindings[from_var]:
                 for to_node in variable_bindings[to_var]:
                     # Find relationships from this source to this target
