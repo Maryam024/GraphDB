@@ -148,13 +148,35 @@ class CypherParser:
                 # Create relationships between matched nodes
                 created_rels = []
                 
+                logging.debug(f"Creating relationship of type {rel_type} with properties {rel_props}")
+                
+                # Process each match row and create the relationship between the specific nodes
                 for row in match_result:
                     if from_var in row and to_var in row:
                         from_node = row[from_var]
                         to_node = row[to_var]
                         
+                        # Skip self-relationships if source and target are the same node
+                        if from_node.id == to_node.id:
+                            logging.debug(f"Skipping self-relationship for node {from_node.id}")
+                            continue
+                        
+                        logging.debug(f"Creating relationship from {from_node.properties} to {to_node.properties}")
+                        
+                        # First check if a relationship of this type already exists
+                        existing_rels = self.db.find_relationships_between(
+                            from_node.id, to_node.id, type_=rel_type
+                        )
+                        
+                        if existing_rels:
+                            logging.debug(f"Relationship already exists, skipping creation")
+                            created_rels.extend(existing_rels)
+                            continue
+                        
+                        # Create and add the new relationship
                         rel = Relationship(from_node, to_node, type_=rel_type, properties=rel_props)
                         self.db.add_relationship(rel)
+                        logging.debug(f"Created relationship {rel.id} from {from_node.id} to {to_node.id} of type {rel_type}")
                         created_rels.append(rel)
                 
                 return {"created_relationships": len(created_rels)}
@@ -314,12 +336,16 @@ class CypherParser:
                         from_node.id, to_node.id, type_=rel_type, properties=rel_props
                     )
                     
-                    # Add matches to our path
-                    for rel in rels:
-                        if rel_var:
-                            matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
-                        else:
-                            matching_paths.append({from_var: from_node, to_var: to_node})
+                        # Add matches to our path only if relationships actually exist
+                    if rels:
+                        for rel in rels:
+                            if rel_var:
+                                matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
+                            else:
+                                matching_paths.append({from_var: from_node, to_var: to_node})
+                        logging.debug(f"Found {len(rels)} relationships from {from_node.properties} to {to_node.properties}")
+                    else:
+                        logging.debug(f"No relationships from {from_node.properties} to {to_node.properties}")
             
             if not matching_paths:
                 logging.debug(f"No matching relationships found for {from_var}->{to_var} of type {rel_type}")

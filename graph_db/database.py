@@ -66,6 +66,14 @@ class Relationship:
                     return False
         
         return True
+        
+    def check_nodes(self, source_id=None, target_id=None):
+        """Check if this relationship connects the specified nodes"""
+        if source_id is not None and self.source_id != source_id:
+            return False
+        if target_id is not None and self.target_id != target_id:
+            return False
+        return True
     
     def serialize(self):
         """Convert relationship to a serializable dictionary"""

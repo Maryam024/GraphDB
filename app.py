@@ -1,7 +1,11 @@
 import os
 import json
 import logging
+import uuid
 from flask import Flask, render_template, request, jsonify, session
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(message)s')
 from graph_db.database import GraphDatabase
 from graph_db.parser import CypherParser
 
@@ -15,26 +19,46 @@ parser = CypherParser(graph_db)
 
 # Example database for demo purposes
 def initialize_example_db():
-    # Create some nodes and relationships if DB is empty
-    if not graph_db.nodes and not graph_db.relationships:
-        # Create Person nodes
-        parser.execute("CREATE (:Person {name: 'Alice', age: 30})")
-        parser.execute("CREATE (:Person {name: 'Bob', age: 40})")
-        parser.execute("CREATE (:Person {name: 'Charlie', age: 25})")
-        
-        # Create Movie nodes
-        parser.execute("CREATE (:Movie {title: 'The Matrix', year: 1999})")
-        parser.execute("CREATE (:Movie {title: 'Inception', year: 2010})")
-        
-        # Create KNOWS relationships between people
-        parser.execute("MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'}) CREATE (a)-[:KNOWS {since: 2015}]->(b)")
-        parser.execute("MATCH (a:Person {name: 'Bob'}), (c:Person {name: 'Charlie'}) CREATE (a)-[:KNOWS {since: 2018}]->(c)")
-        
-        # Create WATCHED relationships between people and movies
-        parser.execute("MATCH (a:Person {name: 'Alice'}), (m:Movie {title: 'The Matrix'}) CREATE (a)-[:WATCHED {rating: 5}]->(m)")
-        parser.execute("MATCH (b:Person {name: 'Bob'}), (m:Movie {title: 'Inception'}) CREATE (b)-[:WATCHED {rating: 4}]->(m)")
-        parser.execute("MATCH (c:Person {name: 'Charlie'}), (m:Movie {title: 'The Matrix'}) CREATE (c)-[:WATCHED {rating: 4}]->(m)")
-        parser.execute("MATCH (c:Person {name: 'Charlie'}), (m:Movie {title: 'Inception'}) CREATE (c)-[:WATCHED {rating: 5}]->(m)")
+    # Reset the database
+    graph_db.nodes = {}
+    graph_db.relationships = {}
+    
+    # Create some nodes and relationships
+    logging.debug("Creating example database")
+    
+    # Create Person nodes
+    parser.execute("CREATE (:Person {name: 'Alice', age: 30})")
+    parser.execute("CREATE (:Person {name: 'Bob', age: 40})")
+    parser.execute("CREATE (:Person {name: 'Charlie', age: 25})")
+    
+    # Create Movie nodes
+    parser.execute("CREATE (:Movie {title: 'The Matrix', year: 1999})")
+    parser.execute("CREATE (:Movie {title: 'Inception', year: 2010})")
+    
+    logging.debug(f"Created nodes: {len(graph_db.nodes)}")
+    
+    # Create KNOWS relationships between people
+    parser.execute("MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'}) CREATE (a)-[:KNOWS {since: 2015}]->(b)")
+    parser.execute("MATCH (a:Person {name: 'Bob'}), (c:Person {name: 'Charlie'}) CREATE (a)-[:KNOWS {since: 2018}]->(c)")
+    
+    # Create WATCHED relationships between people and movies
+    parser.execute("MATCH (a:Person {name: 'Alice'}), (m:Movie {title: 'The Matrix'}) CREATE (a)-[:WATCHED {rating: 5}]->(m)")
+    parser.execute("MATCH (b:Person {name: 'Bob'}), (m:Movie {title: 'Inception'}) CREATE (b)-[:WATCHED {rating: 4}]->(m)")
+    parser.execute("MATCH (b:Person {name: 'Bob'}), (m:Movie {title: 'The Matrix'}) CREATE (b)-[:WATCHED {rating: 3}]->(m)")
+    parser.execute("MATCH (c:Person {name: 'Charlie'}), (m:Movie {title: 'The Matrix'}) CREATE (c)-[:WATCHED {rating: 4}]->(m)")
+    
+    logging.debug(f"Created relationships: {len(graph_db.relationships)}")
+    
+    # Validate Alice's relationships
+    alice_node = None
+    for node in graph_db.nodes.values():
+        if 'Person' in node.labels and node.properties.get('name') == 'Alice':
+            alice_node = node
+            break
+    
+    if alice_node:
+        alice_rels = graph_db.find_relationships_from(alice_node.id)
+        logging.debug(f"Alice has {len(alice_rels)} relationships")
 
 # Initialize example database
 initialize_example_db()
