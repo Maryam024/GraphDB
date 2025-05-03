@@ -45,6 +45,9 @@ def initialize_example_db():
     # Create a FRIEND relationship
     friend_rel = graph_db.create_relationship(alice, bob, "FRIEND", {"since": 2010})
     
+    # Create a dummy Dave for testing
+    dave = graph_db.create_node(["Person"], {"name": "Dave", "age": 35})
+    
     logging.debug(f"Created {len(graph_db.relationships)} relationships")
     
     # Log all relationships for debugging

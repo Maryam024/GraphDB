@@ -216,24 +216,86 @@ class SimpleCypherParser:
             for node in self.db.nodes.values():
                 logging.debug(f"Node: {node.id}, labels: {node.labels}, properties: {node.properties}")
                 
-            # Find matching source and target nodes based on match pattern
-            found_nodes = self._find_nodes_for_match(match_part)
+            # Try direct lookup first for better matching (matches by exact name properties)
+            src_nodes = []
+            dst_nodes = []
+            
+            # Parse node patterns from match_part to extract expected properties
+            node_pattern = r"\((\w+)(?::(\w+))?(?:\s*{([^}]*)})??\)"
+            node_matches = re.finditer(node_pattern, match_part)
+            
+            # Dict to store variables and their expected properties
+            node_vars = {}
+            for node_match in node_matches:
+                var_name = node_match.group(1)
+                node_type = node_match.group(2) or ""
+                props_str = node_match.group(3) or ""
+                
+                # Extract properties
+                props = {}
+                if props_str:
+                    prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", props_str)
+                    for key, value in prop_items:
+                        props[key] = self._parse_value(value.strip())
+                
+                node_vars[var_name] = {
+                    'type': node_type, 
+                    'props': props
+                }
+            
+            # Direct lookup for source and target nodes
+            if from_var in node_vars:
+                src_props = node_vars[from_var]['props']
+                src_type = node_vars[from_var]['type']
+                
+                for node in self.db.nodes.values():
+                    matches = True
+                    # Check type if specified
+                    if src_type and src_type not in node.labels:
+                        matches = False
+                        continue
+                    
+                    # Check all specified properties
+                    for prop_name, prop_value in src_props.items():
+                        if node.properties.get(prop_name) != prop_value:
+                            matches = False
+                            break
+                    
+                    if matches:
+                        src_nodes.append(node)
+                        logging.debug(f"Found source node {from_var}: {node.properties}")
+            
+            if to_var in node_vars:
+                dst_props = node_vars[to_var]['props']
+                dst_type = node_vars[to_var]['type']
+                
+                for node in self.db.nodes.values():
+                    matches = True
+                    # Check type if specified
+                    if dst_type and dst_type not in node.labels:
+                        matches = False
+                        continue
+                    
+                    # Check all specified properties
+                    for prop_name, prop_value in dst_props.items():
+                        if node.properties.get(prop_name) != prop_value:
+                            matches = False
+                            break
+                    
+                    if matches:
+                        dst_nodes.append(node)
+                        logging.debug(f"Found target node {to_var}: {node.properties}")
             
             # Debug the found nodes
-            logging.debug(f"Found nodes for {from_var}:")
-            for node in found_nodes.get(from_var, []):
-                logging.debug(f"  {node.properties}")
-            
-            logging.debug(f"Found nodes for {to_var}:")
-            for node in found_nodes.get(to_var, []):
-                logging.debug(f"  {node.properties}")
+            logging.debug(f"Found {len(src_nodes)} source nodes for {from_var}")
+            logging.debug(f"Found {len(dst_nodes)} target nodes for {to_var}")
             
             # Create relationships between matched nodes
             created_rels = []
             
             # For each source and target node combination
-            for source_node in found_nodes.get(from_var, []):
-                for target_node in found_nodes.get(to_var, []):
+            for source_node in src_nodes:
+                for target_node in dst_nodes:
                     # Skip self-relationships
                     if source_node.id == target_node.id:
                         continue
@@ -262,11 +324,10 @@ class SimpleCypherParser:
                 return [{"success": f"Created {len(created_rels)} relationships"}]
             else:
                 # If no relationships created, check why
-                if from_var in found_nodes and to_var in found_nodes:
-                    if not found_nodes[from_var]:
-                        logging.debug(f"No source nodes found for variable {from_var}")
-                    if not found_nodes[to_var]:
-                        logging.debug(f"No target nodes found for variable {to_var}")
+                if len(src_nodes) == 0:
+                    logging.debug(f"No source nodes found for variable {from_var}")
+                if len(dst_nodes) == 0:
+                    logging.debug(f"No target nodes found for variable {to_var}")
                 
                 # Return empty result
                 return [{"message": "No relationships created"}]
