@@ -37,6 +37,27 @@ def initialize_example_db():
     
     logging.debug(f"Created nodes: {len(graph_db.nodes)}")
     
+    # Get node IDs for later use
+    alice_id = None
+    bob_id = None
+    charlie_id = None
+    matrix_id = None
+    inception_id = None
+    
+    for node in graph_db.nodes.values():
+        if 'Person' in node.labels:
+            if node.properties.get('name') == 'Alice':
+                alice_id = node.id
+            elif node.properties.get('name') == 'Bob':
+                bob_id = node.id
+            elif node.properties.get('name') == 'Charlie':
+                charlie_id = node.id
+        elif 'Movie' in node.labels:
+            if node.properties.get('title') == 'The Matrix':
+                matrix_id = node.id
+            elif node.properties.get('title') == 'Inception':
+                inception_id = node.id
+    
     # Create KNOWS relationships between people
     parser.execute("MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'}) CREATE (a)-[:KNOWS {since: 2015}]->(b)")
     parser.execute("MATCH (a:Person {name: 'Bob'}), (c:Person {name: 'Charlie'}) CREATE (a)-[:KNOWS {since: 2018}]->(c)")
@@ -47,17 +68,27 @@ def initialize_example_db():
     parser.execute("MATCH (b:Person {name: 'Bob'}), (m:Movie {title: 'The Matrix'}) CREATE (b)-[:WATCHED {rating: 3}]->(m)")
     parser.execute("MATCH (c:Person {name: 'Charlie'}), (m:Movie {title: 'The Matrix'}) CREATE (c)-[:WATCHED {rating: 4}]->(m)")
     
+    # Directly create a relationship for testing (alternative approach)
+    if alice_id and bob_id:
+        alice_node = graph_db.nodes[alice_id]
+        bob_node = graph_db.nodes[bob_id]
+        from graph_db.database import Relationship
+        rel = Relationship(alice_node, bob_node, type_="FRIEND", properties={"since": 2010})
+        graph_db.add_relationship(rel)
+    
     logging.debug(f"Created relationships: {len(graph_db.relationships)}")
     
-    # Validate Alice's relationships
-    alice_node = None
-    for node in graph_db.nodes.values():
-        if 'Person' in node.labels and node.properties.get('name') == 'Alice':
-            alice_node = node
-            break
+    # Log all relationships for debugging
+    for rel in graph_db.relationships.values():
+        from_node = graph_db.nodes[rel.source_id]
+        to_node = graph_db.nodes[rel.target_id]
+        from_props = from_node.properties.get('name', '') or from_node.properties.get('title', '')
+        to_props = to_node.properties.get('name', '') or to_node.properties.get('title', '')
+        logging.debug(f"Relationship: {from_props} -[{rel.type}]-> {to_props}")
     
-    if alice_node:
-        alice_rels = graph_db.find_relationships_from(alice_node.id)
+    # Validate Alice's relationships
+    if alice_id:
+        alice_rels = graph_db.find_relationships_from(alice_id)
         logging.debug(f"Alice has {len(alice_rels)} relationships")
 
 # Initialize example database

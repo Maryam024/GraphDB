@@ -111,76 +111,78 @@ class CypherParser:
             match_part = rel_match.group(1)
             create_part = rel_match.group(2)
             
-            # Execute the MATCH part
-            match_result = self._execute_match(f"MATCH {match_part} RETURN *")
-            
-            # Parse the CREATE part
+            # Parse the CREATE part first to extract relationship details
             create_rel_pattern = r"\((\w+)\)-\[:([\w]+)(\s*{([^}]*)}?)?\]->\((\w+)\)"
             create_rel_match = re.search(create_rel_pattern, create_part)
             
-            if create_rel_match:
-                from_var = create_rel_match.group(1)
-                rel_type = create_rel_match.group(2)
-                props_str = create_rel_match.group(4) or ""
-                to_var = create_rel_match.group(5)
+            if not create_rel_match:
+                raise ValueError(f"Invalid CREATE pattern: {create_part}")
                 
-                # Parse relationship properties
-                rel_props = {}
-                if props_str:
-                    prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", props_str)
-                    for key, value in prop_items:
-                        value = value.strip()
-                        if value.startswith("'") and value.endswith("'"):
-                            rel_props[key] = value[1:-1]
-                        elif value.startswith('"') and value.endswith('"'):
-                            rel_props[key] = value[1:-1]
-                        elif value.lower() == 'true':
-                            rel_props[key] = True
-                        elif value.lower() == 'false':
-                            rel_props[key] = False
-                        elif value.isdigit():
-                            rel_props[key] = int(value)
-                        elif re.match(r'^-?\d+(\.\d+)?$', value):
-                            rel_props[key] = float(value)
-                        else:
-                            rel_props[key] = value
+            from_var = create_rel_match.group(1)
+            rel_type = create_rel_match.group(2)
+            props_str = create_rel_match.group(4) or ""
+            to_var = create_rel_match.group(5)
+            
+            # Execute the MATCH part to find the nodes
+            match_query = f"MATCH {match_part} RETURN {from_var}, {to_var}"
+            match_result = self._execute_match(match_query)
+            
+            # Parse relationship properties
+            rel_props = {}
+            if props_str:
+                prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", props_str)
+                for key, value in prop_items:
+                    value = value.strip()
+                    if value.startswith("'") and value.endswith("'"):
+                        rel_props[key] = value[1:-1]
+                    elif value.startswith('"') and value.endswith('"'):
+                        rel_props[key] = value[1:-1]
+                    elif value.lower() == 'true':
+                        rel_props[key] = True
+                    elif value.lower() == 'false':
+                        rel_props[key] = False
+                    elif value.isdigit():
+                        rel_props[key] = int(value)
+                    elif re.match(r'^-?\d+(\.\d+)?$', value):
+                        rel_props[key] = float(value)
+                    else:
+                        rel_props[key] = value
+            
+            # Create relationships between matched nodes
+            created_rels = []
+            
+            logging.debug(f"Creating relationship of type {rel_type} with properties {rel_props}")
+            logging.debug(f"Match result: {match_result}")
+            
+            # Process each match and create the relationship
+            for row in match_result:
+                if from_var not in row or to_var not in row:
+                    logging.debug(f"Missing variable in row: {row}")
+                    continue
+                    
+                from_node = row[from_var]
+                to_node = row[to_var]
                 
-                # Create relationships between matched nodes
-                created_rels = []
+                # Skip self-relationships if source and target are the same node
+                if from_node.id == to_node.id:
+                    logging.debug(f"Skipping self-relationship for node {from_node.id}")
+                    continue
                 
-                logging.debug(f"Creating relationship of type {rel_type} with properties {rel_props}")
+                logging.debug(f"Creating relationship from {from_node.properties} to {to_node.properties}")
                 
-                # Process each match row and create the relationship between the specific nodes
-                for row in match_result:
-                    if from_var in row and to_var in row:
-                        from_node = row[from_var]
-                        to_node = row[to_var]
-                        
-                        # Skip self-relationships if source and target are the same node
-                        if from_node.id == to_node.id:
-                            logging.debug(f"Skipping self-relationship for node {from_node.id}")
-                            continue
-                        
-                        logging.debug(f"Creating relationship from {from_node.properties} to {to_node.properties}")
-                        
-                        # First check if a relationship of this type already exists
-                        existing_rels = self.db.find_relationships_between(
-                            from_node.id, to_node.id, type_=rel_type
-                        )
-                        
-                        if existing_rels:
-                            logging.debug(f"Relationship already exists, skipping creation")
-                            created_rels.extend(existing_rels)
-                            continue
-                        
-                        # Create and add the new relationship
-                        rel = Relationship(from_node, to_node, type_=rel_type, properties=rel_props)
-                        self.db.add_relationship(rel)
-                        logging.debug(f"Created relationship {rel.id} from {from_node.id} to {to_node.id} of type {rel_type}")
-                        created_rels.append(rel)
-                
-                return {"created_relationships": len(created_rels)}
+                # Create and add the new relationship
+                rel = Relationship(from_node, to_node, type_=rel_type, properties=rel_props)
+                self.db.add_relationship(rel)
+                logging.debug(f"Created relationship {rel.id} from {from_node.id} to {to_node.id} of type {rel_type}")
+                created_rels.append(rel)
+            
+            # Verify the relationship was created
+            all_rels = self.db.find_relationships(type_=rel_type)
+            logging.debug(f"After creation, found {len(all_rels)} total relationships of type {rel_type}")
+            
+            return {"created_relationships": len(created_rels)}
         
+        # If we're here, it's an invalid query
         raise ValueError(f"Invalid CREATE query: {query}")
     
     def _execute_match(self, query):
@@ -325,27 +327,41 @@ class CypherParser:
                     # If no relationship type specified, use all nodes
                     variable_bindings[to_var] = list(self.db.nodes.values())
             
-            # Find matching paths
+            # For relationship queries, we need to completely rebuild our approach
+            # We'll get only real relationships and not create a cartesian product
+            
             matching_paths = []
+            logging.debug(f"Finding relationships of type {rel_type} from {from_var} to {to_var}")
+            
+            # Get all relationships of the specified type
+            all_rels = self.db.find_relationships(type_=rel_type, properties=rel_props)
+            logging.debug(f"Found {len(all_rels)} total relationships of type {rel_type}")
+            
+            for rel in all_rels:
+                # Get the source and target nodes for this relationship
+                source_node = self.db.nodes.get(rel.source_id)
+                target_node = self.db.nodes.get(rel.target_id)
+                
+                if not source_node or not target_node:
+                    logging.debug(f"Skipping relationship {rel.id} - missing source or target node")
+                    continue
+                
+                # Check if these nodes match our variable bindings
+                if source_node not in variable_bindings[from_var]:
+                    logging.debug(f"Source node {source_node.id} not in {from_var} bindings")
+                    continue
                     
-            # First find all relationships that match our criteria
-            for from_node in variable_bindings[from_var]:
-                for to_node in variable_bindings[to_var]:
-                    # Find relationships from this source to this target
-                    rels = self.db.find_relationships_between(
-                        from_node.id, to_node.id, type_=rel_type, properties=rel_props
-                    )
-                    
-                        # Add matches to our path only if relationships actually exist
-                    if rels:
-                        for rel in rels:
-                            if rel_var:
-                                matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
-                            else:
-                                matching_paths.append({from_var: from_node, to_var: to_node})
-                        logging.debug(f"Found {len(rels)} relationships from {from_node.properties} to {to_node.properties}")
-                    else:
-                        logging.debug(f"No relationships from {from_node.properties} to {to_node.properties}")
+                if target_node not in variable_bindings[to_var]:
+                    logging.debug(f"Target node {target_node.id} not in {to_var} bindings")
+                    continue
+                
+                # This is a valid relationship - add it to our paths
+                if rel_var:
+                    matching_paths.append({from_var: source_node, rel_var: rel, to_var: target_node})
+                else:
+                    matching_paths.append({from_var: source_node, to_var: target_node})
+                
+                logging.debug(f"Added relationship from {source_node.properties} to {target_node.properties}")
             
             if not matching_paths:
                 logging.debug(f"No matching relationships found for {from_var}->{to_var} of type {rel_type}")
