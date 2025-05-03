@@ -203,16 +203,38 @@ class GraphDatabase:
         """Add a uniqueness constraint on label and property"""
         constraint = (label, property_name)
         if constraint not in self.constraints['unique']:
-            self.constraints['unique'].append(constraint)
-            
-            # Validate existing data
+            # Validate existing data to ensure no duplicates exist
             property_values = {}
+            duplicates = []
+            
             for node in self.nodes.values():
                 if label in node.labels and property_name in node.properties:
                     value = node.properties[property_name]
                     if value in property_values:
-                        raise ValueError(f"Cannot add constraint: Duplicate value '{value}' for {label}.{property_name}")
+                        duplicates.append((value, node.id, property_values[value]))
                     property_values[value] = node.id
+            
+            # If duplicates found, provide detailed error
+            if duplicates:
+                error_msg = "Cannot add constraint: Found duplicate values:\n"
+                for value, node_id1, node_id2 in duplicates:
+                    error_msg += f"  Value '{value}' exists in nodes {node_id1} and {node_id2}\n"
+                raise ValueError(error_msg)
+            
+            # No duplicates found, add the constraint
+            self.constraints['unique'].append(constraint)
+            logging.debug(f"Added unique constraint on {label}.{property_name}")
+            
+    def drop_constraint(self, label, property_name):
+        """Remove a uniqueness constraint"""
+        constraint = (label, property_name)
+        if constraint in self.constraints['unique']:
+            self.constraints['unique'].remove(constraint)
+            logging.debug(f"Dropped constraint on {label}.{property_name}")
+            return True
+        else:
+            logging.debug(f"Constraint on {label}.{property_name} not found")
+            return False
     
     def serialize(self):
         """Convert the database to a serializable dictionary"""

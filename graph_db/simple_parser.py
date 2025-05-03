@@ -30,6 +30,12 @@ class SimpleCypherParser:
         elif query_upper.startswith("ROLLBACK"):
             return self._rollback_transaction()
         
+        # Handle constraint commands
+        elif query_upper.startswith("CREATE CONSTRAINT"):
+            return self._execute_create_constraint(query)
+        elif query_upper.startswith("DROP CONSTRAINT"):
+            return self._execute_drop_constraint(query)
+        
         # Start an auto-transaction if none is active
         auto_transaction = False
         if not self.active_transaction:
