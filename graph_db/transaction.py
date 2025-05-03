@@ -8,6 +8,8 @@ from .database import GraphDatabase
 
 # Global transaction lock for concurrency control
 transaction_lock = threading.RLock()
+# Global lock for database file I/O operations
+db_file_lock = threading.RLock()
 
 class TransactionError(Exception):
     """Base exception for transaction errors"""
@@ -15,6 +17,10 @@ class TransactionError(Exception):
 
 class ConcurrencyError(TransactionError):
     """Exception raised when concurrent operations conflict"""
+    pass
+
+class DeadlockError(TransactionError):
+    """Exception raised when a deadlock situation is detected"""
     pass
 
 class ConstraintViolationError(TransactionError):
@@ -162,14 +168,41 @@ class Transaction:
             logging.error(f"Error rolling back transaction: {str(e)}")
             return False
     
+    def _detect_deadlocks(self):
+        """Detect potential deadlocks using a timeout approach"""
+        # Check if other transactions have been active too long
+        # This is a simple timeout-based approach
+        current_time = time.time()
+        deadlock_timeout = 30.0  # 30 seconds max transaction time
+        
+        for tx_id, start_time in Transaction.active_transactions.items():
+            if tx_id != self.tx_id and (current_time - start_time) > deadlock_timeout:
+                logging.warning(f"Potential deadlock detected with transaction {tx_id}")
+                # In a more sophisticated system, we would analyze the dependency graph
+                # For now, we'll abort this transaction as it might be part of a deadlock
+                return True
+        return False
+        
     def _save_database_to_disk(self):
         """Save the current database state to disk"""
         try:
-            # Only save to db.json on explicit COMMIT operations
-            # This ensures changes are not persisted during auto-transactions
-            data = self.db.serialize()
-            with open('db.json', 'w') as f:
-                json.dump(data, f, indent=2)
+            # Check for potential deadlocks before attempting to save
+            if self._detect_deadlocks():
+                raise DeadlockError("Transaction aborted to prevent deadlock")
+            
+            # Use a dedicated file lock for disk operations
+            with db_file_lock:
+                # Only save to db.json on explicit COMMIT operations
+                # This ensures changes are not persisted during auto-transactions
+                data = self.db.serialize()
+                # First write to a temporary file
+                temp_file = 'db.json.tmp'
+                with open(temp_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+                
+                # Then atomically rename to ensure durability even if system crashes
+                os.replace(temp_file, 'db.json')
+                
             logging.debug("Database state saved to disk")
             return True
         except Exception as e:
@@ -178,16 +211,54 @@ class Transaction:
     
     def load_database_from_disk(self):
         """Load the database state from disk"""
-        try:
-            if os.path.exists('db.json'):
-                with open('db.json', 'r') as f:
-                    data = json.load(f)
-                self.db.deserialize(data)
-                logging.debug("Database state loaded from disk")
-                return True
-            else:
-                logging.debug("No saved database state found")
+        # Use the file lock to ensure safe reading
+        with db_file_lock:
+            try:
+                # First check if a temp file exists - might indicate an incomplete write
+                temp_file = 'db.json.tmp'
+                db_file = 'db.json'
+                
+                if os.path.exists(temp_file) and os.path.exists(db_file):
+                    # Both exist, check which is newer
+                    temp_mtime = os.path.getmtime(temp_file)
+                    db_mtime = os.path.getmtime(db_file)
+                    
+                    if temp_mtime > db_mtime:
+                        # Temp file is newer, the system must have crashed during a save
+                        # Attempt recovery by promoting the temp file
+                        try:
+                            os.replace(temp_file, db_file)
+                            logging.info("Recovered from previous incomplete save operation")
+                        except Exception:
+                            logging.warning("Failed to recover from incomplete save, using last known good state")
+                    else:
+                        # Main file is newer or same age, remove stale temp file
+                        try:
+                            os.remove(temp_file)
+                        except Exception:
+                            pass
+                elif os.path.exists(temp_file) and not os.path.exists(db_file):
+                    # Only temp file exists, promote it
+                    try:
+                        os.rename(temp_file, db_file)
+                        logging.info("Recovered database from temporary file")
+                    except Exception:
+                        logging.error("Failed to recover database from temporary file")
+                
+                # Now try to load the main file
+                if os.path.exists(db_file):
+                    try:
+                        with open(db_file, 'r') as f:
+                            data = json.load(f)
+                        self.db.deserialize(data)
+                        logging.debug("Database state loaded from disk")
+                        return True
+                    except json.JSONDecodeError:
+                        logging.error("Corrupted database file found")
+                        return False
+                else:
+                    logging.debug("No saved database state found")
+                    return False
+            except Exception as e:
+                logging.error(f"Error loading database from disk: {str(e)}")
                 return False
-        except Exception as e:
-            logging.error(f"Error loading database from disk: {str(e)}")
-            return False

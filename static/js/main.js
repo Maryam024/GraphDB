@@ -202,7 +202,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Check if the query is a display query (MATCH/RETURN)
     function isDisplayQuery(query) {
-        return query.toUpperCase().includes('MATCH') && query.toUpperCase().includes('RETURN');
+        const upperQuery = query.toUpperCase();
+        // Include queries that show graph data - any MATCH with RETURN
+        return upperQuery.includes('MATCH') && upperQuery.includes('RETURN');
     }
     
     // Show query box
@@ -560,8 +562,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         function dragEnded(event, d) {
             if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
+            // Keep nodes fixed where they are dropped (don't reset fx/fy to null)
+            // d.fx = null;
+            // d.fy = null;
         }
     }
     
