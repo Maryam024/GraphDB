@@ -579,12 +579,14 @@ class CypherParser:
             
             # Check if we're returning relationship-connected data
             rel_pattern_found = False
+            matching_paths = []  # Initialize matching_paths to avoid unbound variable error
+            
             for rel_match in re.finditer(relationship_pattern, patterns):
                 rel_pattern_found = True
                 break
                 
             # If this involves relationships, use paths to determine rows
-            if rel_pattern_found and 'matching_paths' in locals():
+            if rel_pattern_found and len(matching_paths) > 0:
                 # Instead of creating a cartesian product, use the actual paths
                 logging.debug(f"Using matching paths to build result: {len(matching_paths)} paths found")
                 result_rows = matching_paths
@@ -626,12 +628,14 @@ class CypherParser:
             
             # Check if we're processing relationship-connected data
             rel_pattern_found = False
+            matching_paths = []  # Initialize matching_paths to avoid unbound variable error
+            
             for rel_match in re.finditer(relationship_pattern, patterns):
                 rel_pattern_found = True
                 break
                 
             # If this involves relationships, use paths to determine rows
-            if rel_pattern_found and 'matching_paths' in locals():
+            if rel_pattern_found and len(matching_paths) > 0:
                 # Use the actual relationship paths instead of creating cartesian products
                 logging.debug(f"Using matching paths to build result for specific returns: {len(matching_paths)} paths found")
                 result_rows = matching_paths

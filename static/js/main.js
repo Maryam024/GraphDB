@@ -586,4 +586,106 @@ document.addEventListener('DOMContentLoaded', function() {
             executeBtn.click();
         }
     });
+    
+    // Load and display database constraints
+    function loadConstraints() {
+        fetch('/constraints')
+            .then(response => response.json())
+            .then(data => {
+                // Clear constraints container
+                constraintsContainer.innerHTML = '';
+                
+                if (data.error) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'alert alert-danger';
+                    errorDiv.textContent = data.error;
+                    constraintsContainer.appendChild(errorDiv);
+                    return;
+                }
+                
+                const constraints = data.constraints || [];
+                
+                if (constraints.length === 0) {
+                    // No constraints
+                    const noConstraintsDiv = document.createElement('div');
+                    noConstraintsDiv.className = 'text-center text-muted py-3';
+                    noConstraintsDiv.innerHTML = `
+                        <i data-feather="lock" style="width: 24px; height: 24px;"></i>
+                        <p class="mt-2 small">No active constraints</p>
+                    `;
+                    constraintsContainer.appendChild(noConstraintsDiv);
+                    feather.replace();
+                } else {
+                    // Create table for constraints
+                    const table = document.createElement('table');
+                    table.className = 'table table-sm table-hover';
+                    
+                    // Table header
+                    const thead = document.createElement('thead');
+                    const headerRow = document.createElement('tr');
+                    
+                    ['Type', 'Label', 'Property'].forEach(headerText => {
+                        const th = document.createElement('th');
+                        th.textContent = headerText;
+                        headerRow.appendChild(th);
+                    });
+                    
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+                    
+                    // Table body
+                    const tbody = document.createElement('tbody');
+                    
+                    constraints.forEach(constraint => {
+                        const row = document.createElement('tr');
+                        
+                        // Type cell
+                        const typeCell = document.createElement('td');
+                        const typeSpan = document.createElement('span');
+                        typeSpan.className = 'badge bg-info';
+                        typeSpan.textContent = constraint.type;
+                        typeCell.appendChild(typeSpan);
+                        row.appendChild(typeCell);
+                        
+                        // Label cell
+                        const labelCell = document.createElement('td');
+                        labelCell.textContent = constraint.label;
+                        row.appendChild(labelCell);
+                        
+                        // Property cell
+                        const propCell = document.createElement('td');
+                        propCell.textContent = constraint.property;
+                        row.appendChild(propCell);
+                        
+                        tbody.appendChild(row);
+                    });
+                    
+                    table.appendChild(tbody);
+                    constraintsContainer.appendChild(table);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading constraints:', error);
+                constraintsContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        Failed to load constraints: ${error.message}
+                    </div>
+                `;
+            });
+    }
+    
+    // Refresh constraints button handler
+    refreshConstraintsBtn.addEventListener('click', function() {
+        loadConstraints();
+    });
+    
+    // Update constraints after executing a query that might affect them
+    executeBtn.addEventListener('click', function() {
+        const query = queryInput.value.toUpperCase();
+        if (query.includes('CONSTRAINT') || query.includes('BEGIN') || 
+            query.includes('COMMIT') || query.includes('ROLLBACK')) {
+            // Schedule a refresh of constraints after the query executes
+            setTimeout(loadConstraints, 1000);
+        }
+    });
 });
