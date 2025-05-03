@@ -565,19 +565,32 @@ class CypherParser:
         deleted_nodes = 0
         deleted_rels = 0
         
+        # Track what we've already deleted to avoid duplicate deletions
+        deleted_node_ids = set()
+        deleted_rel_ids = set()
+        
         for row in match_result:
             for var in delete_vars:
                 if var in row:
                     entity = row[var]
                     
-                    if hasattr(entity, 'source_id'):  # It's a relationship
-                        self.db.delete_relationship(entity.id)
-                        deleted_rels += 1
-                    else:  # It's a node
-                        self.db.delete_node(entity.id)
-                        deleted_nodes += 1
+                    if hasattr(entity, 'source_id') and hasattr(entity, 'target_id'):  # It's a relationship
+                        if entity.id not in deleted_rel_ids:
+                            try:
+                                self.db.delete_relationship(entity.id)
+                                deleted_rels += 1
+                                deleted_rel_ids.add(entity.id)
+                            except ValueError as e:
+                                logging.error(f"Failed to delete relationship: {str(e)}")
+                    elif hasattr(entity, 'labels'):  # It's a node
+                        if entity.id not in deleted_node_ids:
+                            try:
+                                self.db.delete_node(entity.id)
+                                deleted_nodes += 1
+                                deleted_node_ids.add(entity.id)
+                            except ValueError as e:
+                                logging.error(f"Failed to delete node: {str(e)}")
         
         return {"deleted_nodes": deleted_nodes, "deleted_relationships": deleted_rels}
 
 
-# Imports moved to the top of the file
