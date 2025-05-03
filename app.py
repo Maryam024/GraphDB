@@ -153,6 +153,7 @@ def load_database():
 @app.route('/example_queries')
 def example_queries():
     examples = [
+        # Basic Queries
         "MATCH (n) RETURN n LIMIT 10",
         "MATCH (p:Person) RETURN p",
         "MATCH (m:Movie) RETURN m",
@@ -160,14 +161,29 @@ def example_queries():
         "MATCH (p:Person)-[r:WATCHED]->(m:Movie) RETURN p.name, m.title, r.rating",
         "MATCH (p:Person) WHERE p.age > 25 RETURN p",
         "MATCH (p:Person)-[:WATCHED]->(m:Movie) WHERE m.title = 'The Matrix' RETURN p.name",
+        
+        # Node and Relationship Creation
         "CREATE (:Person {name: 'Dave', age: 35})",
         "MATCH (a:Person {name: 'Alice'}), (d:Person {name: 'Dave'}) CREATE (a)-[:KNOWS {since: 2020}]->(d)",
+        
+        # Updates and Deletions
         "MATCH (p:Person {name: 'Alice'}) SET p.job = 'Developer' RETURN p",
         "MATCH (p:Person {name: 'Dave'}) DELETE p",
+        
+        # Transaction Management
         "BEGIN",
         "COMMIT",
         "ROLLBACK",
-        "BEGIN\nCREATE (:Person {name: 'Eve', age: 28})\nCOMMIT"
+        "BEGIN\nCREATE (:Person {name: 'Eve', age: 28})\nCOMMIT",
+        
+        # Constraint Operations
+        "CREATE CONSTRAINT ON (p:Person) ASSERT p.name IS UNIQUE",
+        "DROP CONSTRAINT ON (p:Person) ASSERT p.name IS UNIQUE",
+        "CREATE CONSTRAINT ON (m:Movie) ASSERT m.title IS UNIQUE",
+        
+        # Advanced Transaction Examples
+        "BEGIN\nCREATE CONSTRAINT ON (p:Person) ASSERT p.email IS UNIQUE\nCOMMIT",
+        "BEGIN\nCREATE (:Person {name: 'Frank', email: 'frank@example.com'})\nCREATE (:Person {name: 'Grace', email: 'grace@example.com'})\nCOMMIT"
     ]
     return jsonify({'examples': examples})
 

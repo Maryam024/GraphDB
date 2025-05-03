@@ -149,6 +149,111 @@ class SimpleCypherParser:
         self.active_transaction = False
         return [{"success": "Transaction rolled back"}]
     
+    def _execute_create_constraint(self, query):
+        """Execute a CREATE CONSTRAINT query
+        
+        Syntax: CREATE CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE
+        """
+        # Parse the CREATE CONSTRAINT statement
+        constraint_pattern = r"CREATE\s+CONSTRAINT\s+ON\s+\((\w+):(\w+)\)\s+ASSERT\s+\1\.(\w+)\s+IS\s+UNIQUE"
+        constraint_match = re.search(constraint_pattern, query, re.IGNORECASE)
+        
+        if not constraint_match:
+            raise ValueError("Invalid constraint syntax. Expected: CREATE CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE")
+        
+        # Extract label and property
+        var_name = constraint_match.group(1)  # Not used, just for syntax validation
+        label = constraint_match.group(2)
+        property_name = constraint_match.group(3)
+        
+        # Start an auto-transaction for this operation
+        auto_transaction = False
+        if not self.active_transaction:
+            self.transaction.begin()
+            self.active_transaction = True
+            auto_transaction = True
+        
+        try:
+            # Add the constraint
+            logging.debug(f"Adding unique constraint on {label}.{property_name}")
+            self.db.add_unique_constraint(label, property_name)
+            
+            # Log the operation
+            if self.active_transaction:
+                self.transaction.log_operation("CREATE_CONSTRAINT", {
+                    "label": label,
+                    "property": property_name,
+                    "type": "UNIQUE"
+                })
+            
+            # Commit if this was an auto-transaction (constraints modify schema)
+            if auto_transaction:
+                self.transaction.commit()
+                self.active_transaction = False
+            
+            return [{"success": f"Added unique constraint on {label}.{property_name}"}]
+            
+        except Exception as e:
+            # Rollback on error
+            if auto_transaction:
+                self.transaction.rollback()
+                self.active_transaction = False
+            raise e
+    
+    def _execute_drop_constraint(self, query):
+        """Execute a DROP CONSTRAINT query
+        
+        Syntax: DROP CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE
+        """
+        # Parse the DROP CONSTRAINT statement
+        constraint_pattern = r"DROP\s+CONSTRAINT\s+ON\s+\((\w+):(\w+)\)\s+ASSERT\s+\1\.(\w+)\s+IS\s+UNIQUE"
+        constraint_match = re.search(constraint_pattern, query, re.IGNORECASE)
+        
+        if not constraint_match:
+            raise ValueError("Invalid constraint syntax. Expected: DROP CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE")
+        
+        # Extract label and property
+        var_name = constraint_match.group(1)  # Not used, just for syntax validation
+        label = constraint_match.group(2)
+        property_name = constraint_match.group(3)
+        
+        # Start an auto-transaction for this operation
+        auto_transaction = False
+        if not self.active_transaction:
+            self.transaction.begin()
+            self.active_transaction = True
+            auto_transaction = True
+        
+        try:
+            # Drop the constraint
+            logging.debug(f"Dropping unique constraint on {label}.{property_name}")
+            result = self.db.drop_constraint(label, property_name)
+            
+            # Log the operation
+            if self.active_transaction:
+                self.transaction.log_operation("DROP_CONSTRAINT", {
+                    "label": label,
+                    "property": property_name,
+                    "type": "UNIQUE"
+                })
+            
+            # Commit if this was an auto-transaction (constraints modify schema)
+            if auto_transaction:
+                self.transaction.commit()
+                self.active_transaction = False
+            
+            if result:
+                return [{"success": f"Dropped unique constraint on {label}.{property_name}"}]
+            else:
+                return [{"message": f"No constraint found on {label}.{property_name}"}]
+            
+        except Exception as e:
+            # Rollback on error
+            if auto_transaction:
+                self.transaction.rollback()
+                self.active_transaction = False
+            raise e
+    
     def _execute_create(self, query):
         """Execute a CREATE query"""
         # Handle node creation: CREATE (:Label {prop: value})
