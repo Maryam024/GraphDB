@@ -342,12 +342,38 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     } else if (value.type && value.source_id && value.target_id) {
                         // It's a relationship
-                        // Only add if both nodes exist
-                        if (nodeMap[value.source_id] || nodeMap[value.target_id]) {
-                            links.push({
-                                id: value.id,
-                                source: value.source_id,
-                                target: value.target_id,
+                        // Make sure both source and target nodes exist in our nodeMap
+                        if (!nodeMap[value.source_id]) {
+                            // If source node doesn't exist yet, add a placeholder
+                            const sourceNode = {
+                                id: value.source_id,
+                                labels: ['Unknown'],
+                                labelStr: ':Unknown',
+                                properties: {},
+                                color: getNodeColor('Unknown')
+                            };
+                            nodes.push(sourceNode);
+                            nodeMap[value.source_id] = sourceNode;
+                        }
+                        
+                        if (!nodeMap[value.target_id]) {
+                            // If target node doesn't exist yet, add a placeholder
+                            const targetNode = {
+                                id: value.target_id,
+                                labels: ['Unknown'],
+                                labelStr: ':Unknown',
+                                properties: {},
+                                color: getNodeColor('Unknown')
+                            };
+                            nodes.push(targetNode);
+                            nodeMap[value.target_id] = targetNode;
+                        }
+                        
+                        // Now we're sure both nodes exist, add the relationship
+                        links.push({
+                            id: value.id,
+                            source: value.source_id,
+                            target: value.target_id,
                                 type: value.type,
                                 properties: value.properties
                             });
