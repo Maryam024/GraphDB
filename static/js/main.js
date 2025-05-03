@@ -699,13 +699,213 @@ document.addEventListener('DOMContentLoaded', function() {
         loadConstraints();
     });
     
-    // Update constraints after executing a query that might affect them
+    // Refresh indexes button handler
+    refreshIndexesBtn.addEventListener('click', function() {
+        loadIndexes();
+    });
+    
+    // Refresh index statistics button handler
+    refreshStatsBtn.addEventListener('click', function() {
+        loadIndexStats();
+    });
+    
+    // Update metadata after executing a query that might affect them
     executeBtn.addEventListener('click', function() {
         const query = queryInput.value.toUpperCase();
-        if (query.includes('CONSTRAINT') || query.includes('BEGIN') || 
-            query.includes('COMMIT') || query.includes('ROLLBACK')) {
-            // Schedule a refresh of constraints after the query executes
-            setTimeout(loadConstraints, 1000);
+        
+        // Check if the query might affect constraints or indexes
+        if (query.includes('CONSTRAINT') || query.includes('INDEX') || 
+            query.includes('BEGIN') || query.includes('COMMIT') || 
+            query.includes('ROLLBACK')) {
+            
+            // Schedule refreshes after the query executes
+            setTimeout(() => {
+                loadConstraints();
+                loadIndexes();
+                loadIndexStats();
+            }, 1000);
         }
     });
+    
+    // Function to load and display index information
+    function loadIndexes() {
+        fetch('/indexes')
+            .then(response => response.json())
+            .then(data => {
+                // Clear indexes container
+                indexesContainer.innerHTML = '';
+                
+                if (data.error) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'alert alert-danger';
+                    errorDiv.textContent = data.error;
+                    indexesContainer.appendChild(errorDiv);
+                    return;
+                }
+                
+                if (!data.indexes || data.indexes.length === 0) {
+                    indexesContainer.innerHTML = `
+                        <div class="text-center text-muted py-3">
+                            <i data-feather="search" style="width: 24px; height: 24px;"></i>
+                            <p class="mt-2 small">No active indexes</p>
+                        </div>
+                    `;
+                    feather.replace();
+                    return;
+                }
+                
+                // Create a table to display indexes
+                const table = document.createElement('table');
+                table.className = 'table table-sm';
+                
+                // Add table header
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                
+                const headerLabel = document.createElement('th');
+                headerLabel.textContent = 'Label';
+                headerRow.appendChild(headerLabel);
+                
+                const headerProperty = document.createElement('th');
+                headerProperty.textContent = 'Property';
+                headerRow.appendChild(headerProperty);
+                
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+                
+                // Add table body
+                const tbody = document.createElement('tbody');
+                
+                data.indexes.forEach(index => {
+                    const row = document.createElement('tr');
+                    
+                    const labelCell = document.createElement('td');
+                    labelCell.textContent = index.label;
+                    row.appendChild(labelCell);
+                    
+                    const propertyCell = document.createElement('td');
+                    propertyCell.textContent = index.property;
+                    row.appendChild(propertyCell);
+                    
+                    tbody.appendChild(row);
+                });
+                
+                table.appendChild(tbody);
+                indexesContainer.appendChild(table);
+            })
+            .catch(error => {
+                console.error('Error loading indexes:', error);
+                indexesContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        Failed to load indexes: ${error.message}
+                    </div>
+                `;
+            });
+    }
+    
+    // Function to load and display index statistics
+    function loadIndexStats() {
+        fetch('/index_stats')
+            .then(response => response.json())
+            .then(data => {
+                // Clear index stats container
+                indexStatsContainer.innerHTML = '';
+                
+                if (data.error) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'alert alert-danger';
+                    errorDiv.textContent = data.error;
+                    indexStatsContainer.appendChild(errorDiv);
+                    return;
+                }
+                
+                if (!data.index_statistics || data.index_statistics.length === 0) {
+                    indexStatsContainer.innerHTML = `
+                        <div class="text-center text-muted py-3">
+                            <i data-feather="activity" style="width: 24px; height: 24px;"></i>
+                            <p class="mt-2 small">No index statistics available</p>
+                        </div>
+                    `;
+                    feather.replace();
+                    return;
+                }
+                
+                // Create a table to display index statistics
+                const table = document.createElement('table');
+                table.className = 'table table-sm table-hover';
+                
+                // Add table header
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                
+                ['Label', 'Property', 'Used', 'Nodes', 'Efficiency'].forEach(header => {
+                    const th = document.createElement('th');
+                    th.textContent = header;
+                    headerRow.appendChild(th);
+                });
+                
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+                
+                // Add table body
+                const tbody = document.createElement('tbody');
+                
+                data.index_statistics.forEach(stat => {
+                    const row = document.createElement('tr');
+                    
+                    // Label cell
+                    const labelCell = document.createElement('td');
+                    labelCell.textContent = stat.label;
+                    row.appendChild(labelCell);
+                    
+                    // Property cell
+                    const propertyCell = document.createElement('td');
+                    propertyCell.textContent = stat.property;
+                    row.appendChild(propertyCell);
+                    
+                    // Usage count cell
+                    const usageCell = document.createElement('td');
+                    usageCell.textContent = stat.usage_count;
+                    row.appendChild(usageCell);
+                    
+                    // Node count cell
+                    const nodeCountCell = document.createElement('td');
+                    nodeCountCell.textContent = stat.node_count;
+                    row.appendChild(nodeCountCell);
+                    
+                    // Efficiency cell
+                    const efficiencyCell = document.createElement('td');
+                    if (stat.efficiency !== undefined) {
+                        const efficiencyValue = parseFloat(stat.efficiency).toFixed(1);
+                        efficiencyCell.textContent = `${efficiencyValue}%`;
+                        
+                        // Apply color based on efficiency
+                        if (stat.efficiency > 75) {
+                            efficiencyCell.className = 'text-success';
+                        } else if (stat.efficiency > 25) {
+                            efficiencyCell.className = 'text-warning';
+                        } else {
+                            efficiencyCell.className = 'text-danger';
+                        }
+                    } else {
+                        efficiencyCell.textContent = 'N/A';
+                        efficiencyCell.className = 'text-muted';
+                    }
+                    row.appendChild(efficiencyCell);
+                    
+                    tbody.appendChild(row);
+                });
+                
+                table.appendChild(tbody);
+                indexStatsContainer.appendChild(table);
+            })
+            .catch(error => {
+                console.error('Error loading index statistics:', error);
+                indexStatsContainer.innerHTML = `
+                    <div class="alert alert-danger">
+                        Failed to load index statistics: ${error.message}
+                    </div>
+                `;
+            });
+    }
 });
