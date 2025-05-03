@@ -236,8 +236,24 @@ def example_queries():
         "MATCH (m:Movie) RETURN m",
         "MATCH (p:Person)-[r:KNOWS]->(friend) RETURN p, r, friend",
         "MATCH (p:Person)-[r:WATCHED]->(m:Movie) RETURN p.name, m.title, r.rating",
+        
+        # WHERE Clause with Comparison Operators
         "MATCH (p:Person) WHERE p.age > 25 RETURN p",
-        "MATCH (p:Person)-[:WATCHED]->(m:Movie) WHERE m.title = 'The Matrix' RETURN p.name",
+        "MATCH (p:Person) WHERE p.age < 35 RETURN p",
+        "MATCH (p:Person) WHERE p.age >= 30 RETURN p",
+        "MATCH (p:Person) WHERE p.age <= 30 RETURN p",
+        "MATCH (m:Movie) WHERE m.year > 2000 RETURN m.title, m.year",
+        
+        # WHERE Clause with Logical Operators
+        "MATCH (p:Person) WHERE p.age > 25 AND p.age < 40 RETURN p",
+        "MATCH (p:Person) WHERE p.name = 'Alice' OR p.name = 'Bob' RETURN p",
+        "MATCH (p:Person) WHERE p.age > 30 OR p.name = 'Charlie' RETURN p",
+        "MATCH (p:Person) WHERE NOT p.age = 25 RETURN p",
+        "MATCH (p:Person)-[:WATCHED]->(m:Movie) WHERE m.title = 'The Matrix' AND p.age > 30 RETURN p.name",
+        
+        # Complex WHERE Clauses with Nested Conditions
+        "MATCH (p:Person) WHERE (p.age > 30 AND p.name = 'Bob') OR (p.age < 30 AND p.name = 'Charlie') RETURN p",
+        "MATCH (p:Person)-[r:WATCHED]->(m:Movie) WHERE (m.year > 2000 OR m.title = 'The Matrix') AND r.rating > 3 RETURN p.name, m.title, r.rating",
         
         # Node and Relationship Creation
         "CREATE (:Person {name: 'Dave', age: 35})",
@@ -246,6 +262,8 @@ def example_queries():
         # Updates and Deletions
         "MATCH (p:Person {name: 'Alice'}) SET p.job = 'Developer' RETURN p",
         "MATCH (p:Person {name: 'Dave'}) DELETE p",
+        "MATCH (p:Person) WHERE p.age < 30 SET p.status = 'Junior' RETURN p",
+        "MATCH (p:Person) WHERE p.age >= 30 AND p.age < 40 SET p.status = 'Senior' RETURN p",
         
         # Transaction Management
         "BEGIN",
@@ -261,12 +279,14 @@ def example_queries():
         # Index Operations
         "CREATE INDEX ON :Person(name)",
         "CREATE INDEX ON :Movie(title)",
+        "CREATE INDEX ON :Person(age)",
         "DROP INDEX ON :Person(name)",
         
         # Using Indexed Properties for Efficient Queries
         "MATCH (p:Person {name: 'Alice'}) RETURN p",
         "MATCH (m:Movie {title: 'The Matrix'}) RETURN m",
         "MATCH (p:Person)-[:WATCHED]->(m:Movie {title: 'The Matrix'}) RETURN p.name",
+        "MATCH (p:Person) WHERE p.age > 30 AND p.age < 45 RETURN p",  # Can use index on age
         
         # Complex Transactions with Indexes
         "BEGIN\nCREATE INDEX ON :Person(email)\nCREATE INDEX ON :Person(age)\nCOMMIT",

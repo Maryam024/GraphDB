@@ -121,10 +121,26 @@
                     <li><code>MATCH (n {prop: 'value'}) RETURN n</code> - Find nodes by property</li>
                     <li><code>CREATE (:Label {prop: 'value'})</code> - Create a node</li>
                     <li><code>MATCH (a),(b) WHERE a.prop = 'x' AND b.prop = 'y' CREATE (a)-[:REL_TYPE]->(b)</code> - Create relationship</li>
-                    <li><code>MATCH (n) WHERE n.prop > 25 RETURN n</code> - Filter with WHERE</li>
-                    <li><code>MATCH (a)-[r]->(b) RETURN a,r,b</code> - Match relationships</li>
                     <li><code>MATCH (n) DELETE n</code> - Delete nodes (and relationships)</li>
                     <li><code>MATCH (n) SET n.prop = 'value' RETURN n</code> - Update properties</li>
+                </ul>
+                
+                <h6>WHERE Clause Operators</h6>
+                <ul class="mb-3 small">
+                    <li><code>WHERE x = y</code> - Equal to</li>
+                    <li><code>WHERE x <> y</code> or <code>WHERE x != y</code> - Not equal to</li>
+                    <li><code>WHERE x < y</code> - Less than</li>
+                    <li><code>WHERE x <= y</code> - Less than or equal to</li>
+                    <li><code>WHERE x > y</code> - Greater than</li>
+                    <li><code>WHERE x >= y</code> - Greater than or equal to</li>
+                </ul>
+                
+                <h6>Logical Operators</h6>
+                <ul class="mb-3 small">
+                    <li><code>WHERE x AND y</code> - Both conditions must be true</li>
+                    <li><code>WHERE x OR y</code> - Either condition must be true</li>
+                    <li><code>WHERE NOT x</code> - Negates a condition</li>
+                    <li><code>WHERE (x AND y) OR z</code> - Group conditions with parentheses</li>
                 </ul>
                 
                 <h6>Constraints</h6>
