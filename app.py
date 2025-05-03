@@ -129,11 +129,11 @@ def save_database():
 
 @app.route('/load', methods=['POST'])
 def load_database():
+    # Define safe_filename outside the try block so it's available in all exception handlers
+    filename = request.json.get('filename', 'graph_db.json')
+    safe_filename = os.path.basename(filename)  # Only use the base name, not paths
+    
     try:
-        # Make sure filename is defined and safe
-        filename = request.json.get('filename', 'graph_db.json')
-        safe_filename = os.path.basename(filename)  # Only use the base name, not paths
-        
         # Load from the dedicated data directory
         data_dir = 'data'
         file_path = os.path.join(data_dir, safe_filename)
