@@ -165,6 +165,14 @@ class SimpleCypherParser:
                 # Create the node
                 node = self.db.create_node(labels=labels, properties=properties)
                 created_nodes.append(node)
+                
+                # Log operation if in transaction
+                if self.active_transaction:
+                    self.transaction.log_operation("CREATE_NODE", {
+                        "node_id": node.id,
+                        "labels": list(labels),
+                        "properties": properties
+                    })
             
             return {"created": len(created_nodes)}
         
@@ -248,6 +256,16 @@ class SimpleCypherParser:
                     rel = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
                     created_rels.append(rel)
                     logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
+                    
+                    # Log operation if in transaction
+                    if self.active_transaction:
+                        self.transaction.log_operation("CREATE_RELATIONSHIP", {
+                            "relationship_id": rel.id,
+                            "source_id": source_node.id,
+                            "target_id": target_node.id,
+                            "type": rel_type,
+                            "properties": rel_props
+                        })
             
             # Return a message about successfully created relationships
             if created_rels:
@@ -613,12 +631,24 @@ class SimpleCypherParser:
                 # Parse the value
                 value = self._parse_value(value_str)
                 
+                # Get old value for logging
+                old_value = node.properties.get(prop_name)
+                
                 # Update the property
                 node.properties[prop_name] = value
                 if node not in updated_nodes:
                     updated_nodes.append(node)
                 
                 logging.debug(f"Updated {var_name}.{prop_name} = {value} for node {node.id}")
+                
+                # Log operation if in transaction
+                if self.active_transaction:
+                    self.transaction.log_operation("UPDATE_PROPERTY", {
+                        "node_id": node.id,
+                        "property": prop_name,
+                        "old_value": old_value,
+                        "new_value": value
+                    })
         
         # If there's a RETURN clause, return the updated nodes
         if return_clause != "*":

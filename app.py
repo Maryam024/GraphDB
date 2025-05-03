@@ -159,7 +159,11 @@ def example_queries():
         "CREATE (:Person {name: 'Dave', age: 35})",
         "MATCH (a:Person {name: 'Alice'}), (d:Person {name: 'Dave'}) CREATE (a)-[:KNOWS {since: 2020}]->(d)",
         "MATCH (p:Person {name: 'Alice'}) SET p.job = 'Developer' RETURN p",
-        "MATCH (p:Person {name: 'Dave'}) DELETE p"
+        "MATCH (p:Person {name: 'Dave'}) DELETE p",
+        "BEGIN",
+        "COMMIT",
+        "ROLLBACK",
+        "BEGIN\nCREATE (:Person {name: 'Eve', age: 28})\nCOMMIT"
     ]
     return jsonify({'examples': examples})
 
