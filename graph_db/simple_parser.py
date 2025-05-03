@@ -3,6 +3,7 @@ import logging
 import uuid
 from .database import Node, Relationship
 from .transaction import Transaction
+from .cypher import evaluate_condition
 
 class SimpleCypherParser:
     def __init__(self, database):
@@ -685,6 +686,15 @@ class SimpleCypherParser:
             # Find matching relationships
             result_rows = self._find_matching_relationships(patterns, from_var, rel_var, rel_type, to_var)
             
+            # Apply WHERE clause filtering if present
+            if where_clause:
+                filtered_rows = []
+                for row in result_rows:
+                    if evaluate_condition(row, where_clause):
+                        filtered_rows.append(row)
+                result_rows = filtered_rows
+                logging.debug(f"Applied WHERE filter: {where_clause}. Rows after filtering: {len(result_rows)}")
+            
             # Apply limit
             if limit is not None and limit < len(result_rows):
                 result_rows = result_rows[:limit]
@@ -744,6 +754,15 @@ class SimpleCypherParser:
             
             # Build result rows (cartesian product for node-only queries)
             result_rows = self._build_cartesian_product(variable_nodes)
+            
+            # Apply WHERE clause filtering if present
+            if where_clause:
+                filtered_rows = []
+                for row in result_rows:
+                    if evaluate_condition(row, where_clause):
+                        filtered_rows.append(row)
+                result_rows = filtered_rows
+                logging.debug(f"Applied WHERE filter: {where_clause}. Rows after filtering: {len(result_rows)}")
             
             # Apply limit
             if limit is not None and limit < len(result_rows):
