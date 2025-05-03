@@ -374,9 +374,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             id: value.id,
                             source: value.source_id,
                             target: value.target_id,
-                                type: value.type,
-                                properties: value.properties
-                            });
+                            type: value.type,
+                            properties: value.properties
+                        });
                         }
                     }
                 }

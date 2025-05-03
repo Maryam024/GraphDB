@@ -50,8 +50,11 @@ def execute_query():
     if not query.strip():
         return jsonify({'error': 'Query is empty'}), 400
     
+    logging.info(f"Executing query: {query}")
+    
     try:
         result = parser.execute(query)
+        logging.info(f"Query result: {result}")
         
         # Serialize the results if it's a list of objects
         if isinstance(result, list):
@@ -65,12 +68,16 @@ def execute_query():
                     else:
                         serialized_item[key] = value
                 serialized_results.append(serialized_item)
+            logging.info(f"Serialized results: {serialized_results}")
             return jsonify({'result': serialized_results})
         
         # If it's operation results like create/delete counts
+        logging.info(f"Returning operation result: {result}")
         return jsonify({'result': result})
     except Exception as e:
-        logging.error(f"Query execution error: {str(e)}")
+        import traceback
+        error_trace = traceback.format_exc()
+        logging.error(f"Query execution error: {str(e)}\n{error_trace}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/save', methods=['POST'])
