@@ -42,25 +42,35 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load example queries
     loadExamplesBtn.addEventListener('click', function() {
+        console.log("Loading example queries...");
         fetch('/example_queries')
-            .then(response => response.json())
+            .then(response => {
+                console.log("Example queries response:", response);
+                return response.json();
+            })
             .then(data => {
+                console.log("Example queries data:", data);
                 examplesList.innerHTML = '';
                 
-                data.examples.forEach(query => {
-                    const item = document.createElement('button');
-                    item.className = 'list-group-item list-group-item-action example-query';
-                    item.textContent = query;
-                    
-                    item.addEventListener('click', function() {
-                        queryInput.value = query;
-                        examplesModal.hide();
+                if (data.examples && Array.isArray(data.examples)) {
+                    data.examples.forEach(query => {
+                        const item = document.createElement('button');
+                        item.className = 'list-group-item list-group-item-action example-query';
+                        item.textContent = query;
+                        
+                        item.addEventListener('click', function() {
+                            queryInput.value = query;
+                            examplesModal.hide();
+                        });
+                        
+                        examplesList.appendChild(item);
                     });
                     
-                    examplesList.appendChild(item);
-                });
-                
-                examplesModal.show();
+                    examplesModal.show();
+                } else {
+                    console.error("Invalid examples format:", data);
+                    showError('Invalid examples format received from server');
+                }
             })
             .catch(error => {
                 console.error('Error loading examples:', error);
@@ -142,6 +152,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Function to execute a query and display results
     function executeQuery(query) {
+        console.log("Executing query:", query);
+        // Show loading indicator
+        const loadingMsg = document.createElement('div');
+        loadingMsg.className = 'message-box message-info';
+        loadingMsg.innerHTML = '<i data-feather="loader" class="me-2"></i> Executing query...';
+        resultsContainer.appendChild(loadingMsg);
+        feather.replace();
+        
         fetch('/execute', {
             method: 'POST',
             headers: {
@@ -149,8 +167,15 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({ query })
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log("Query response:", response);
+            return response.json();
+        })
         .then(data => {
+            console.log("Query data:", data);
+            // Remove loading message
+            resultsContainer.removeChild(loadingMsg);
+            
             if (data.error) {
                 showError(data.error);
             } else {
@@ -161,8 +186,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(error => {
+            // Remove loading message
+            if (loadingMsg.parentNode === resultsContainer) {
+                resultsContainer.removeChild(loadingMsg);
+            }
             console.error('Error executing query:', error);
-            showError('Failed to execute query');
+            showError('Failed to execute query: ' + error.message);
         });
     }
     

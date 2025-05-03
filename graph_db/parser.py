@@ -10,15 +10,41 @@ class CypherParser:
     def execute(self, query):
         """Parse and execute a Cypher-like query"""
         query = query.strip()
+        logging.debug(f"Executing query: {query}")
+        
+        # Check for empty query
+        if not query:
+            raise ValueError("Empty query")
         
         # Identify query type
-        if query.upper().startswith("CREATE "):
-            return self._execute_create(query)
-        elif query.upper().startswith("MATCH "):
-            return self._execute_match(query)
-        elif query.upper().startswith("DELETE "):
-            return self._execute_delete(query)
+        query_upper = query.upper()
+        
+        # CREATE query
+        if query_upper.startswith("CREATE "):
+            result = self._execute_create(query)
+            logging.debug(f"CREATE result: {result}")
+            return result
+            
+        # MATCH with DELETE (needs to be before general MATCH)
+        elif "DELETE " in query_upper and "MATCH " in query_upper:
+            result = self._execute_delete(query)
+            logging.debug(f"MATCH-DELETE result: {result}")
+            return result
+            
+        # MATCH with general query
+        elif query_upper.startswith("MATCH "):
+            result = self._execute_match(query)
+            logging.debug(f"MATCH result: {result}")
+            return result
+            
+        # Simple DELETE
+        elif query_upper.startswith("DELETE "):
+            result = self._execute_delete(query)
+            logging.debug(f"DELETE result: {result}")
+            return result
+            
         else:
+            logging.error(f"Unsupported query type: {query}")
             raise ValueError(f"Unsupported query type: {query}")
     
     def _execute_create(self, query):
