@@ -123,9 +123,59 @@ class CypherParser:
             props_str = create_rel_match.group(4) or ""
             to_var = create_rel_match.group(5)
             
-            # Execute the MATCH part to find the nodes
-            match_query = f"MATCH {match_part} RETURN {from_var}, {to_var}"
-            match_result = self._execute_match(match_query)
+            # We need to find the nodes without using our relationship matching
+            # For this specific case, we'll execute a simpler version
+            # Find nodes that match the patterns directly
+            variable_bindings = {}
+            
+            # Process node patterns in match_part
+            node_pattern = r"\((\w*)((?::\w+)*)(?:\s*{([^}]*)})??\)"
+            node_matches = re.finditer(node_pattern, match_part)
+            
+            for node_match in node_matches:
+                var_name = node_match.group(1)
+                if not var_name:
+                    continue
+                    
+                labels = []
+                if node_match.group(2):
+                    labels = [l.strip(':') for l in node_match.group(2).split(':') if l]
+                
+                properties = {}
+                if node_match.group(3):
+                    prop_str = node_match.group(3)
+                    prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", prop_str)
+                    
+                    for key, value in prop_items:
+                        value = value.strip()
+                        if value.startswith("'") and value.endswith("'"):
+                            properties[key] = value[1:-1]
+                        elif value.startswith('"') and value.endswith('"'):
+                            properties[key] = value[1:-1]
+                        elif value.lower() == 'true':
+                            properties[key] = True
+                        elif value.lower() == 'false':
+                            properties[key] = False
+                        elif value.isdigit():
+                            properties[key] = int(value)
+                        elif re.match(r'^-?\d+(\.\d+)?$', value):
+                            properties[key] = float(value)
+                        else:
+                            properties[key] = value
+                
+                # Find nodes matching the pattern
+                matching_nodes = self.db.find_nodes(labels=labels, properties=properties)
+                variable_bindings[var_name] = matching_nodes
+            
+            # Create result rows with all combinations of source and target nodes
+            match_result = []
+            
+            if from_var in variable_bindings and to_var in variable_bindings:
+                for from_node in variable_bindings[from_var]:
+                    for to_node in variable_bindings[to_var]:
+                        match_result.append({from_var: from_node, to_var: to_node})
+                
+            logging.debug(f"Found nodes for relationship creation: {len(match_result)} combinations")
             
             # Parse relationship properties
             rel_props = {}
@@ -171,10 +221,14 @@ class CypherParser:
                 logging.debug(f"Creating relationship from {from_node.properties} to {to_node.properties}")
                 
                 # Create and add the new relationship
-                rel = Relationship(from_node, to_node, type_=rel_type, properties=rel_props)
-                self.db.add_relationship(rel)
-                logging.debug(f"Created relationship {rel.id} from {from_node.id} to {to_node.id} of type {rel_type}")
-                created_rels.append(rel)
+                try:
+                    rel = Relationship(from_node, to_node, type_=rel_type, properties=rel_props)
+                    self.db.add_relationship(rel)
+                    logging.debug(f"Created relationship {rel.id} from {from_node.id} to {to_node.id} of type {rel_type}")
+                    created_rels.append(rel)
+                except Exception as e:
+                    logging.error(f"Error creating relationship: {str(e)}")
+                    raise
             
             # Verify the relationship was created
             all_rels = self.db.find_relationships(type_=rel_type)
@@ -520,48 +574,28 @@ class CypherParser:
             # Return all variable bindings
             result_rows = []
             
-            # Get all combinations of variable bindings
-            if len(variable_bindings) == 1:
-                var = list(variable_bindings.keys())[0]
-                for value in variable_bindings[var]:
-                    result_rows.append({var: value})
-            else:
-                # Similar to what we did for WHERE processing
-                vars_list = list(variable_bindings.keys())
-                for value in variable_bindings[vars_list[0]]:
-                    result_rows.append({vars_list[0]: value})
+            # Check if we're returning relationship-connected data
+            rel_pattern_found = False
+            for rel_match in re.finditer(relationship_pattern, patterns):
+                rel_pattern_found = True
+                break
                 
-                for i in range(1, len(vars_list)):
-                    var = vars_list[i]
-                    new_rows = []
-                    
-                    for row in result_rows:
-                        for value in variable_bindings[var]:
-                            new_row = row.copy()
-                            new_row[var] = value
-                            new_rows.append(new_row)
-                    
-                    result_rows = new_rows
-            
-            # Apply limit if specified
-            if limit is not None and limit < len(result_rows):
-                result_rows = result_rows[:limit]
-            
-            return result_rows
-        else:
-            # Return specific variables or expressions
-            return_items = [item.strip() for item in return_clause.split(',')]
-            result_rows = []
-            
-            # Get all combinations of variable bindings
-            if len(variable_bindings) == 1:
-                var = list(variable_bindings.keys())[0]
-                for value in variable_bindings[var]:
-                    result_rows.append({var: value})
+            # If this involves relationships, use paths to determine rows
+            if rel_pattern_found and 'matching_paths' in locals():
+                # Instead of creating a cartesian product, use the actual paths
+                logging.debug(f"Using matching paths to build result: {len(matching_paths)} paths found")
+                result_rows = matching_paths
             else:
-                # Similar to what we did for WHERE processing
-                vars_list = list(variable_bindings.keys())
-                if vars_list:
+                # For non-relationship queries, continue with the normal approach
+                # Get all combinations of variable bindings
+                if len(variable_bindings) == 1:
+                    var = list(variable_bindings.keys())[0]
+                    for value in variable_bindings[var]:
+                        result_rows.append({var: value})
+                else:
+                    # For multiple nodes without relationships, we need to create combinations
+                    # but only for nodes, not for relationships
+                    vars_list = list(variable_bindings.keys())
                     for value in variable_bindings[vars_list[0]]:
                         result_rows.append({vars_list[0]: value})
                     
@@ -576,6 +610,53 @@ class CypherParser:
                                 new_rows.append(new_row)
                         
                         result_rows = new_rows
+            
+            # Apply limit if specified
+            if limit is not None and limit < len(result_rows):
+                result_rows = result_rows[:limit]
+            
+            return result_rows
+        else:
+            # Return specific variables or expressions
+            return_items = [item.strip() for item in return_clause.split(',')]
+            result_rows = []
+            
+            # Check if we're processing relationship-connected data
+            rel_pattern_found = False
+            for rel_match in re.finditer(relationship_pattern, patterns):
+                rel_pattern_found = True
+                break
+                
+            # If this involves relationships, use paths to determine rows
+            if rel_pattern_found and 'matching_paths' in locals():
+                # Use the actual relationship paths instead of creating cartesian products
+                logging.debug(f"Using matching paths to build result for specific returns: {len(matching_paths)} paths found")
+                result_rows = matching_paths
+            else:
+                # For non-relationship queries, continue with the normal approach
+                # Get all combinations of variable bindings
+                if len(variable_bindings) == 1:
+                    var = list(variable_bindings.keys())[0]
+                    for value in variable_bindings[var]:
+                        result_rows.append({var: value})
+                else:
+                    # Similar to what we did for WHERE processing
+                    vars_list = list(variable_bindings.keys())
+                    if vars_list:
+                        for value in variable_bindings[vars_list[0]]:
+                            result_rows.append({vars_list[0]: value})
+                        
+                        for i in range(1, len(vars_list)):
+                            var = vars_list[i]
+                            new_rows = []
+                            
+                            for row in result_rows:
+                                for value in variable_bindings[var]:
+                                    new_row = row.copy()
+                                    new_row[var] = value
+                                    new_rows.append(new_row)
+                            
+                            result_rows = new_rows
             
             # Process return items (handle property access)
             processed_rows = []
