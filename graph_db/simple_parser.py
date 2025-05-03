@@ -53,7 +53,7 @@ class SimpleCypherParser:
         node_pattern = r"CREATE\s+\(([^)]*)\)"
         node_matches = re.findall(node_pattern, query, re.IGNORECASE)
         
-        if node_matches:
+        if node_matches and not "MATCH" in query.upper():
             created_nodes = []
             for node_match in node_matches:
                 # Parse labels
@@ -101,44 +101,85 @@ class SimpleCypherParser:
             props_str = create_rel_match.group(4) or ""
             to_var = create_rel_match.group(5)
             
-            # Execute a simple match to find the nodes
-            match_query = f"MATCH {match_part} RETURN {from_var}, {to_var}"
-            match_result = self._execute_match(match_query)
-            
-            # Parse relationship properties
+            # Extract relationship properties
             rel_props = {}
             if props_str:
                 prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", props_str)
                 for key, value in prop_items:
                     rel_props[key] = self._parse_value(value.strip())
             
+            # Find matching source and target nodes
+            found_nodes = self._find_nodes_for_match(match_part)
+            
             # Create relationships between matched nodes
             created_rels = []
             
-            # Process each match and create the relationship
-            for row in match_result:
-                if from_var not in row or to_var not in row:
-                    continue
+            # For each source and target node combination
+            for source_node in found_nodes.get(from_var, []):
+                for target_node in found_nodes.get(to_var, []):
+                    # Skip self-relationships
+                    if source_node.id == target_node.id:
+                        continue
                     
-                from_node = row[from_var]
-                to_node = row[to_var]
-                
-                # Skip self-relationships
-                if from_node.id == to_node.id:
-                    continue
-                
-                # Create relationship
-                rel = self.db.create_relationship(from_node, to_node, rel_type, rel_props)
-                created_rels.append(rel)
+                    # Create the relationship
+                    rel = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
+                    created_rels.append(rel)
+                    logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
             
             return {"created_relationships": len(created_rels)}
         
         # If we're here, it's an invalid query
         raise ValueError(f"Invalid CREATE query: {query}")
+        
+    def _find_nodes_for_match(self, match_pattern):
+        """Find nodes matching a MATCH pattern"""
+        # Extract individual node patterns
+        node_pattern = r"\((\w+)(?::(\w+))?(?:\s*{([^}]*)})??\)"
+        node_matches = re.finditer(node_pattern, match_pattern)
+        
+        # Store results by variable name
+        variable_nodes = {}
+        
+        for node_match in node_matches:
+            var_name = node_match.group(1)
+            node_type = node_match.group(2)
+            props_str = node_match.group(3)
+            
+            # Extract properties
+            props = {}
+            if props_str:
+                prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", props_str)
+                for key, value in prop_items:
+                    props[key] = self._parse_value(value.strip())
+            
+            # Find matching nodes
+            matching_nodes = []
+            for node in self.db.nodes.values():
+                # Check node type
+                if node_type and node_type not in node.labels:
+                    continue
+                
+                # Check node properties
+                if not all(node.properties.get(k) == v for k, v in props.items()):
+                    continue
+                
+                # This node matches our criteria
+                matching_nodes.append(node)
+            
+            variable_nodes[var_name] = matching_nodes
+        
+        return variable_nodes
     
     def _execute_match(self, query):
         """Execute a MATCH query with improved relationship handling"""
-        # Extract the match patterns and return clause
+        # Check for SET queries
+        set_pattern = r"MATCH\s+(.*?)(?:\s+WHERE\s+(.*?))?\s+SET\s+(.*?)(?:\s+RETURN\s+(.*?))?(?:\s+LIMIT\s+(\d+))?$"
+        set_match = re.search(set_pattern, query, re.IGNORECASE | re.DOTALL)
+        
+        if set_match:
+            return self._execute_set(query, set_match)
+        
+        # For regular MATCH queries
         match_pattern = r"MATCH\s+(.*?)(?:\s+WHERE\s+(.*?))?(?:\s+RETURN\s+(.*?))?(?:\s+LIMIT\s+(\d+))?$"
         match = re.search(match_pattern, query, re.IGNORECASE | re.DOTALL)
         
@@ -362,6 +403,75 @@ class SimpleCypherParser:
             return float(value_str)
         else:
             return value_str
+    
+    def _execute_set(self, query, set_match):
+        """Execute a SET query to update properties"""
+        logging.debug(f"Executing SET query: {query}")
+        
+        # Extract parts of the SET query
+        patterns = set_match.group(1)
+        where_clause = set_match.group(2)
+        set_clause = set_match.group(3)
+        return_clause = set_match.group(4) or "*"
+        limit = int(set_match.group(5)) if set_match.group(5) else None
+        
+        # First, find all nodes that match the MATCH pattern
+        match_query = f"MATCH {patterns}"
+        if where_clause:
+            match_query += f" WHERE {where_clause}"
+        match_query += " RETURN *"
+        
+        # Get all nodes that match the pattern
+        matching_rows = self._execute_match(match_query)
+        
+        # Process the SET clause
+        set_items = [item.strip() for item in set_clause.split(',')]
+        updated_nodes = []
+        
+        for row in matching_rows:
+            for set_item in set_items:
+                # Parse the SET item (e.g., n.property = value)
+                prop_pattern = r"(\w+)\.(\w+)\s*=\s*(.+)"
+                prop_match = re.match(prop_pattern, set_item)
+                
+                if not prop_match:
+                    continue
+                
+                var_name = prop_match.group(1)
+                prop_name = prop_match.group(2)
+                value_str = prop_match.group(3).strip()
+                
+                # Get the node to update
+                if var_name not in row:
+                    continue
+                
+                node = row[var_name]
+                if not hasattr(node, 'properties'):
+                    continue
+                
+                # Parse the value
+                value = self._parse_value(value_str)
+                
+                # Update the property
+                node.properties[prop_name] = value
+                if node not in updated_nodes:
+                    updated_nodes.append(node)
+                
+                logging.debug(f"Updated {var_name}.{prop_name} = {value} for node {node.id}")
+        
+        # If there's a RETURN clause, return the updated nodes
+        if return_clause != "*":
+            # Create a result with only the updated nodes
+            updated_rows = []
+            for row in matching_rows:
+                if any(entity in updated_nodes for entity in row.values() if hasattr(entity, 'properties')):
+                    updated_rows.append(row)
+            
+            # Process the return clause
+            return self._process_return_properties(updated_rows, return_clause)
+        else:
+            # Just return the updated nodes
+            return [{"updated": len(updated_nodes)}]
     
     def _execute_delete(self, query):
         """Execute a DELETE query"""
