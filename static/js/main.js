@@ -406,7 +406,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             type: value.type,
                             properties: value.properties
                         });
-                        }
                     }
                 }
             });

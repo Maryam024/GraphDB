@@ -84,12 +84,19 @@ def execute_query():
 def save_database():
     try:
         db_state = graph_db.serialize()
+        # Make sure filename is defined and safe
         filename = request.json.get('filename', 'graph_db.json')
+        safe_filename = os.path.basename(filename)  # Only use the base name, not paths
         
-        with open(filename, 'w') as f:
+        # Save to a dedicated data directory
+        data_dir = 'data'
+        os.makedirs(data_dir, exist_ok=True)
+        file_path = os.path.join(data_dir, safe_filename)
+        
+        with open(file_path, 'w') as f:
             json.dump(db_state, f, indent=2)
         
-        return jsonify({'message': f'Database saved as {filename}'})
+        return jsonify({'message': f'Database saved as {safe_filename}'})
     except Exception as e:
         logging.error(f"Save error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -97,16 +104,22 @@ def save_database():
 @app.route('/load', methods=['POST'])
 def load_database():
     try:
+        # Make sure filename is defined and safe
         filename = request.json.get('filename', 'graph_db.json')
+        safe_filename = os.path.basename(filename)  # Only use the base name, not paths
         
-        with open(filename, 'r') as f:
+        # Load from the dedicated data directory
+        data_dir = 'data'
+        file_path = os.path.join(data_dir, safe_filename)
+        
+        with open(file_path, 'r') as f:
             db_state = json.load(f)
         
         graph_db.deserialize(db_state)
         
-        return jsonify({'message': f'Database loaded from {filename}'})
+        return jsonify({'message': f'Database loaded from {safe_filename}'})
     except FileNotFoundError:
-        return jsonify({'error': f'File {filename} not found'}), 404
+        return jsonify({'error': f'File {safe_filename} not found'}), 404
     except Exception as e:
         logging.error(f"Load error: {str(e)}")
         return jsonify({'error': str(e)}), 500
