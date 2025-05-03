@@ -72,13 +72,17 @@ class SimpleCypherParser:
                 logging.debug(f"MATCH result: {result}")
                 
                 # Automatically commit if this was an auto-transaction (for write operations)
-                if auto_transaction and ("SET" in query_upper or "CREATE" in query_upper):
-                    self.transaction.commit()
-                    self.active_transaction = False
-                elif auto_transaction:
-                    # For read-only queries, just rollback the auto-transaction
-                    self.transaction.rollback()
-                    self.active_transaction = False
+                if auto_transaction:
+                    if "SET" in query_upper or "CREATE" in query_upper:
+                        # This is a write query in auto-transaction mode
+                        logging.debug("Auto-committing after write operation")
+                        self.transaction.commit()
+                        self.active_transaction = False
+                    else:
+                        # For read-only queries, just rollback the auto-transaction
+                        logging.debug("Auto-rolling back after read-only operation")
+                        self.transaction.rollback()
+                        self.active_transaction = False
                 
                 return result
                 
@@ -211,11 +215,8 @@ class SimpleCypherParser:
             logging.debug("All nodes in database:")
             for node in self.db.nodes.values():
                 logging.debug(f"Node: {node.id}, labels: {node.labels}, properties: {node.properties}")
-            
-            # Direct node lookup approach was too specific, removing it in favor of the generic approach
-            
-            # If direct lookup failed, try the standard method
-            # Find matching source and target nodes
+                
+            # Find matching source and target nodes based on match pattern
             found_nodes = self._find_nodes_for_match(match_part)
             
             # Debug the found nodes

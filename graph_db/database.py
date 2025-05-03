@@ -110,12 +110,14 @@ class GraphDatabase:
         """Create and add a node to the database"""
         node = Node(labels=labels, properties=properties)
         self.add_node(node)
+        # Note: Persistence handled by transaction system
         return node
         
     def create_relationship(self, source_node, target_node, type_, properties):
         """Create and add a relationship to the database"""
         rel = Relationship(source_node, target_node, type_=type_, properties=properties)
         self.add_relationship(rel)
+        # Note: Persistence handled by transaction system
         return rel
     
     def add_node(self, node):

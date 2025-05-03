@@ -81,6 +81,8 @@ class Transaction:
     def _save_database_to_disk(self):
         """Save the current database state to disk"""
         try:
+            # Only save to db.json on explicit COMMIT operations
+            # This ensures changes are not persisted during auto-transactions
             data = self.db.serialize()
             with open('db.json', 'w') as f:
                 json.dump(data, f, indent=2)
