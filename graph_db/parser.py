@@ -306,22 +306,25 @@ class CypherParser:
             # Find matching paths
             matching_paths = []
             
-            # Get all relationships of the specified type
-            all_rels_of_type = self.db.find_relationships(type_=rel_type, properties=rel_props)
+            # Only match specific relationships between specific nodes
+            # instead of getting all relationships of a type and then filtering
+            for from_node in variable_bindings[from_var]:
+                for to_node in variable_bindings[to_var]:
+                    # Find relationships from this source to this target
+                    rels = self.db.find_relationships_between(
+                        from_node.id, to_node.id, type_=rel_type, properties=rel_props
+                    )
+                    
+                    # Add matches to our path
+                    for rel in rels:
+                        if rel_var:
+                            matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
+                        else:
+                            matching_paths.append({from_var: from_node, to_var: to_node})
             
-            # Then match them with nodes
-            for rel in all_rels_of_type:
-                from_node = self.db.nodes.get(rel.source_id)
-                to_node = self.db.nodes.get(rel.target_id)
+            if not matching_paths:
+                logging.debug(f"No matching relationships found for {from_var}->{to_var} of type {rel_type}")
                 
-                # Check if these nodes match our variable bindings
-                if from_node in variable_bindings[from_var] and to_node in variable_bindings[to_var]:
-                    if rel_var:
-                        # Include the relationship in the result
-                        matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
-                    else:
-                        matching_paths.append({from_var: from_node, to_var: to_node})
-            
             # Update variable bindings based on relationship matches
             if matching_paths:
                 # Create a new set of variable bindings based on the paths
