@@ -248,28 +248,44 @@ class CypherParser:
             
             to_var = rel_match.group(5)
             
-            # Initialize variables if not already bound
+            # Initialize variables if not already bound, but with appropriate constraints
             if from_var not in variable_bindings:
-                variable_bindings[from_var] = self.db.find_nodes()
+                # Find all source nodes that have relationships of this type
+                source_node_ids = set()
+                for rel in self.db.find_relationships(type_=rel_type, properties=rel_props):
+                    source_node_ids.add(rel.source_id)
+                
+                # Only include nodes that are sources of this relationship type
+                source_nodes = [node for node in self.db.nodes.values() if node.id in source_node_ids]
+                variable_bindings[from_var] = source_nodes
             
             if to_var not in variable_bindings:
-                variable_bindings[to_var] = self.db.find_nodes()
+                # Find all target nodes that have relationships of this type
+                target_node_ids = set()
+                for rel in self.db.find_relationships(type_=rel_type, properties=rel_props):
+                    target_node_ids.add(rel.target_id)
+                
+                # Only include nodes that are targets of this relationship type
+                target_nodes = [node for node in self.db.nodes.values() if node.id in target_node_ids]
+                variable_bindings[to_var] = target_nodes
             
             # Find matching paths
             matching_paths = []
             
-            for from_node in variable_bindings[from_var]:
-                for to_node in variable_bindings[to_var]:
-                    rels = self.db.find_relationships_between(
-                        from_node.id, to_node.id, type_=rel_type, properties=rel_props
-                    )
-                    
-                    if rels:
-                        for rel in rels:
-                            if rel_var:
-                                matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
-                            else:
-                                matching_paths.append({from_var: from_node, to_var: to_node})
+            # First find all relationships of the specified type
+            all_rels_of_type = self.db.find_relationships(type_=rel_type, properties=rel_props)
+            
+            # Then match them with nodes
+            for rel in all_rels_of_type:
+                from_node = self.db.nodes.get(rel.source_id)
+                to_node = self.db.nodes.get(rel.target_id)
+                
+                # Check if these nodes match our variable bindings
+                if from_node in variable_bindings[from_var] and to_node in variable_bindings[to_var]:
+                    if rel_var:
+                        matching_paths.append({from_var: from_node, rel_var: rel, to_var: to_node})
+                    else:
+                        matching_paths.append({from_var: from_node, to_var: to_node})
             
             # Update variable bindings based on relationship matches
             if matching_paths:
