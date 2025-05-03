@@ -1,0 +1,143 @@
+{
+  "nodes": [
+    {
+      "id": "b6a38bae-4d16-4db4-89b8-dea3c9347d37",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Alice",
+        "age": 30,
+        "job": "Developer"
+      }
+    },
+    {
+      "id": "abe5ee6a-0bb9-4bb6-a59c-e8750cba8dc4",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Bob",
+        "age": 40
+      }
+    },
+    {
+      "id": "2a14efd2-9d06-4256-9df6-026c62e54c2d",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Charlie",
+        "age": 25
+      }
+    },
+    {
+      "id": "59a55dc7-6ee2-4506-9660-376223f92f3a",
+      "labels": [
+        "Movie"
+      ],
+      "properties": {
+        "title": "The Matrix",
+        "year": 1999
+      }
+    },
+    {
+      "id": "d21726d8-dad7-4365-bfdb-d7f2b2be6637",
+      "labels": [
+        "Movie"
+      ],
+      "properties": {
+        "title": "Inception",
+        "year": 2010
+      }
+    },
+    {
+      "id": "acc6e15a-c326-4363-9f61-cb7d608fdfb2",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Dave",
+        "age": 35
+      }
+    },
+    {
+      "id": "07a4a9bd-8e00-46e8-92ba-8cf7a99ba4bd",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Areeba",
+        "age": 35
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "29e6350a-3ca3-45ca-ae04-a3d82ecaae39",
+      "source_id": "b6a38bae-4d16-4db4-89b8-dea3c9347d37",
+      "target_id": "abe5ee6a-0bb9-4bb6-a59c-e8750cba8dc4",
+      "type": "KNOWS",
+      "properties": {
+        "since": 2015
+      }
+    },
+    {
+      "id": "cae269c0-5b94-4980-b0f0-657caafd2f57",
+      "source_id": "abe5ee6a-0bb9-4bb6-a59c-e8750cba8dc4",
+      "target_id": "2a14efd2-9d06-4256-9df6-026c62e54c2d",
+      "type": "KNOWS",
+      "properties": {
+        "since": 2018
+      }
+    },
+    {
+      "id": "c15548d3-feba-4512-b063-b2c05f803112",
+      "source_id": "b6a38bae-4d16-4db4-89b8-dea3c9347d37",
+      "target_id": "59a55dc7-6ee2-4506-9660-376223f92f3a",
+      "type": "WATCHED",
+      "properties": {
+        "rating": 5
+      }
+    },
+    {
+      "id": "f23b44e8-06a3-457a-aff0-ccd63c26fb6f",
+      "source_id": "abe5ee6a-0bb9-4bb6-a59c-e8750cba8dc4",
+      "target_id": "d21726d8-dad7-4365-bfdb-d7f2b2be6637",
+      "type": "WATCHED",
+      "properties": {
+        "rating": 4
+      }
+    },
+    {
+      "id": "ad0ec805-8f7b-42d9-aa1e-1ed6e350355c",
+      "source_id": "abe5ee6a-0bb9-4bb6-a59c-e8750cba8dc4",
+      "target_id": "59a55dc7-6ee2-4506-9660-376223f92f3a",
+      "type": "WATCHED",
+      "properties": {
+        "rating": 3
+      }
+    },
+    {
+      "id": "7bea9830-c33a-40b4-a8be-74b305a7f2ff",
+      "source_id": "2a14efd2-9d06-4256-9df6-026c62e54c2d",
+      "target_id": "59a55dc7-6ee2-4506-9660-376223f92f3a",
+      "type": "WATCHED",
+      "properties": {
+        "rating": 4
+      }
+    },
+    {
+      "id": "4b2a0c5e-9c01-4165-9741-ff552d4efc5c",
+      "source_id": "b6a38bae-4d16-4db4-89b8-dea3c9347d37",
+      "target_id": "abe5ee6a-0bb9-4bb6-a59c-e8750cba8dc4",
+      "type": "FRIEND",
+      "properties": {
+        "since": 2010
+      }
+    }
+  ],
+  "constraints": {
+    "unique": []
+  }
+}

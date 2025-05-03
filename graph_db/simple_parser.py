@@ -70,8 +70,13 @@ class SimpleCypherParser:
                 
             # MATCH with general query
             elif query_upper.startswith("MATCH "):
-                result = self._execute_match(query)
-                logging.debug(f"MATCH result: {result}")
+                # Check for MATCH/CREATE pattern first
+                if "CREATE" in query_upper:
+                    result = self._execute_create(query)
+                    logging.debug(f"MATCH/CREATE result: {result}")
+                else:
+                    result = self._execute_match(query)
+                    logging.debug(f"MATCH result: {result}")
                 
                 # Always rollback auto-transactions (no disk writing)
                 if auto_transaction:
