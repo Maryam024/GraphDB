@@ -102,6 +102,17 @@ class GraphDatabase:
         self.indexes = {}  # {'label': {'property': {value: [node_ids]}}}
         self.indexed_properties = []  # List of (label, property) tuples that are indexed
         
+        # Index usage statistics for optimization decisions
+        self.index_stats = {
+            'usage_count': {},     # {(label, property): count} - how many times an index is used
+            'creation_time': {},   # {(label, property): timestamp} - when each index was created
+            'last_used': {},       # {(label, property): timestamp} - when each index was last used
+            'scan_savings': {},    # {(label, property): node_count} - approx. nodes skipped due to index
+            'node_count': {}       # {(label, property): count} - number of nodes in each index
+        }
+        import time
+        self.time = time  # For tracking index usage times
+        
     def clear(self):
         """Clear all nodes and relationships from the database"""
         self.nodes = {}
@@ -109,6 +120,15 @@ class GraphDatabase:
         self.constraints = {'unique': []}
         self.indexes = {}
         self.indexed_properties = []
+        
+        # Reset index statistics
+        self.index_stats = {
+            'usage_count': {},
+            'creation_time': {},
+            'last_used': {},
+            'scan_savings': {},
+            'node_count': {}
+        }
         
     def create_node(self, labels, properties):
         """Create and add a node to the database"""
@@ -262,16 +282,25 @@ class GraphDatabase:
             self.indexes[label][property_name] = {}
             
         # Populate the index with existing data
+        node_count = 0
         for node_id, node in self.nodes.items():
             if label in node.labels and property_name in node.properties:
                 value = node.properties[property_name]
                 if value not in self.indexes[label][property_name]:
                     self.indexes[label][property_name][value] = []
                 self.indexes[label][property_name][value].append(node_id)
+                node_count += 1
                 
         # Add to the list of indexed properties
         self.indexed_properties.append(index_key)
-        logging.debug(f"Created index on {label}.{property_name}")
+        
+        # Track index statistics
+        self.index_stats['creation_time'][index_key] = self.time.time()
+        self.index_stats['usage_count'][index_key] = 0
+        self.index_stats['scan_savings'][index_key] = 0
+        self.index_stats['node_count'][index_key] = node_count
+        
+        logging.debug(f"Created index on {label}.{property_name} covering {node_count} nodes")
         return True
         
     def drop_index(self, label, property_name):
@@ -289,6 +318,12 @@ class GraphDatabase:
                 
         # Remove from indexed properties list
         self.indexed_properties.remove(index_key)
+        
+        # Clean up index statistics
+        for stat_type in ['usage_count', 'creation_time', 'last_used', 'scan_savings', 'node_count']:
+            if index_key in self.index_stats[stat_type]:
+                del self.index_stats[stat_type][index_key]
+        
         logging.debug(f"Dropped index on {label}.{property_name}")
         return True
         
@@ -334,16 +369,34 @@ class GraphDatabase:
                         
     def find_nodes_by_index(self, label, property_name, value):
         """Find nodes using an index for better performance"""
-        if ((label, property_name) in self.indexed_properties and
+        index_key = (label, property_name)
+        
+        if (index_key in self.indexed_properties and
             label in self.indexes and
             property_name in self.indexes[label] and
             value in self.indexes[label][property_name]):
+            
+            # Update index usage statistics
+            if index_key not in self.index_stats['usage_count']:
+                self.index_stats['usage_count'][index_key] = 0
+            self.index_stats['usage_count'][index_key] += 1
+            self.index_stats['last_used'][index_key] = self.time.time()
+            
+            # Track approximate scan savings (nodes we didn't have to search through)
+            total_nodes = len(self.nodes)
+            matched_nodes = len(self.indexes[label][property_name][value])
+            saved_scans = total_nodes - matched_nodes
+            
+            if index_key not in self.index_stats['scan_savings']:
+                self.index_stats['scan_savings'][index_key] = 0
+            self.index_stats['scan_savings'][index_key] += saved_scans
             
             # Use the index to directly get matching node IDs
             node_ids = self.indexes[label][property_name][value]
             return [self.nodes[node_id] for node_id in node_ids if node_id in self.nodes]
         else:
             # Fall back to full scan if no index or value not found
+            logging.debug(f"Index lookup failed for {label}.{property_name} = {value}, falling back to full scan")
             return [
                 node for node in self.nodes.values()
                 if label in node.labels and property_name in node.properties and node.properties[property_name] == value
@@ -358,6 +411,46 @@ class GraphDatabase:
             'indexes': self.indexed_properties
         }
     
+    def get_index_statistics(self):
+        """Get statistics about index usage and performance"""
+        stats = []
+        
+        for index_key in self.indexed_properties:
+            label, prop = index_key
+            
+            # Skip if this index has no stats yet
+            if index_key not in self.index_stats['creation_time']:
+                continue
+                
+            index_info = {
+                'label': label,
+                'property': prop,
+                'usage_count': self.index_stats['usage_count'].get(index_key, 0),
+                'scan_savings': self.index_stats['scan_savings'].get(index_key, 0),
+                'node_count': self.index_stats['node_count'].get(index_key, 0),
+                'creation_time': self.index_stats['creation_time'].get(index_key),
+                'last_used': self.index_stats['last_used'].get(index_key, None)
+            }
+            
+            # Calculate efficiency if the index has been used
+            if index_info['usage_count'] > 0 and index_info['node_count'] > 0:
+                # Average number of nodes skipped per query
+                index_info['avg_savings_per_query'] = index_info['scan_savings'] / index_info['usage_count']
+                
+                # Effectiveness as percentage of database scanned
+                total_possible_scans = index_info['usage_count'] * len(self.nodes)
+                if total_possible_scans > 0:
+                    index_info['efficiency'] = (index_info['scan_savings'] / total_possible_scans) * 100
+                else:
+                    index_info['efficiency'] = 0
+            else:
+                index_info['avg_savings_per_query'] = 0
+                index_info['efficiency'] = 0
+                
+            stats.append(index_info)
+            
+        return stats
+    
     def deserialize(self, data):
         """Restore database from serialized data"""
         # Clear current database
@@ -366,6 +459,15 @@ class GraphDatabase:
         self.constraints = data.get('constraints', {'unique': []})
         self.indexes = {}
         self.indexed_properties = []
+        
+        # Reset index statistics
+        self.index_stats = {
+            'usage_count': {},
+            'creation_time': {},
+            'last_used': {},
+            'scan_savings': {},
+            'node_count': {}
+        }
         
         # Restore nodes
         for node_data in data.get('nodes', []):

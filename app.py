@@ -188,6 +188,45 @@ def get_constraints():
         logging.error(f"Error getting constraints: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/indexes', methods=['GET'])
+def get_indexes():
+    try:
+        # Get the current index metadata
+        indexes = []
+        for label, prop in graph_db.indexed_properties:
+            indexes.append({
+                'label': label,
+                'property': prop
+            })
+        
+        return jsonify({'indexes': indexes})
+    except Exception as e:
+        logging.error(f"Error getting indexes: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/index_stats', methods=['GET'])
+def get_index_stats():
+    try:
+        # Get detailed index statistics
+        stats = graph_db.get_index_statistics()
+        
+        # Format date/time values for display
+        for stat in stats:
+            if 'creation_time' in stat and stat['creation_time']:
+                stat['creation_time'] = format_timestamp(stat['creation_time'])
+            if 'last_used' in stat and stat['last_used']:
+                stat['last_used'] = format_timestamp(stat['last_used'])
+        
+        return jsonify({'index_statistics': stats})
+    except Exception as e:
+        logging.error(f"Error getting index statistics: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+def format_timestamp(timestamp):
+    """Format a timestamp into a human-readable string"""
+    from datetime import datetime
+    return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
 @app.route('/example_queries')
 def example_queries():
     examples = [
