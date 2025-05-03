@@ -90,11 +90,22 @@ class Transaction:
             self.modified_nodes.add(details['node_id'])
         if 'relationship_id' in details:
             self.modified_rels.add(details['relationship_id'])
-            
+        
+        # Check constraints for node operations
         if operation == 'CREATE_NODE' and not self._check_constraints(details):
             self.rollback()
             raise ConstraintViolationError(f"Node creation would violate constraints")
+        
+        # Handle constraint operations
+        if operation == 'CREATE_CONSTRAINT':
+            try:
+                # Validate that no existing data violates the constraint
+                self._validate_constraint_creation(details.get('label'), details.get('property'))
+            except Exception as e:
+                self.rollback()
+                raise ConstraintViolationError(f"Cannot create constraint: {str(e)}")
             
+        # Add operation to log
         self.log.append({"operation": operation, "details": details})
         logging.debug(f"Transaction {self.tx_id} log: {operation} - {details}")
     
@@ -117,6 +128,69 @@ class Transaction:
                             logging.error(f"Constraint violation: {label}.{prop_name}='{value}' already exists")
                             return False
         return True
+        
+    def _validate_constraint_creation(self, label, property_name):
+        """Validate that a constraint can be created without violating data integrity"""
+        # Validate existing data to ensure no duplicates would violate the constraint
+        property_values = {}
+        duplicates = []
+        
+        for node in self.db.nodes.values():
+            if label in node.labels and property_name in node.properties:
+                value = node.properties[property_name]
+                if value in property_values:
+                    duplicates.append((value, node.id, property_values[value]))
+                property_values[value] = node.id
+        
+        # If duplicates found, provide detailed error
+        if duplicates:
+            error_msg = "Found duplicate values:\n"
+            for value, node_id1, node_id2 in duplicates:
+                error_msg += f"  Value '{value}' exists in nodes {node_id1} and {node_id2}\n"
+            raise ConstraintViolationError(error_msg)
+    
+    def _apply_operations(self):
+        """Apply all operations in the log to the database"""
+        for entry in self.log:
+            operation = entry['operation']
+            details = entry['details']
+            
+            # Apply each operation based on its type
+            if operation == 'CREATE_CONSTRAINT':
+                label = details.get('label')
+                property_name = details.get('property')
+                constraint_type = details.get('type', 'UNIQUE')
+                
+                if constraint_type == 'UNIQUE':
+                    # Add the constraint directly to the database
+                    self.db.add_unique_constraint(label, property_name)
+                    logging.debug(f"Applied CREATE_CONSTRAINT: {label}.{property_name} IS UNIQUE")
+            
+            elif operation == 'DROP_CONSTRAINT':
+                label = details.get('label')
+                property_name = details.get('property')
+                constraint_type = details.get('type', 'UNIQUE')
+                
+                if constraint_type == 'UNIQUE':
+                    # Remove the constraint from the database
+                    self.db.drop_constraint(label, property_name)
+                    logging.debug(f"Applied DROP_CONSTRAINT: {label}.{property_name} IS UNIQUE")
+            
+            elif operation == 'CREATE_INDEX':
+                label = details.get('label')
+                property_name = details.get('property')
+                
+                # Create the index
+                self.db.create_index(label, property_name)
+                logging.debug(f"Applied CREATE_INDEX: {label}.{property_name}")
+            
+            elif operation == 'DROP_INDEX':
+                label = details.get('label')
+                property_name = details.get('property')
+                
+                # Drop the index
+                self.db.drop_index(label, property_name)
+                logging.debug(f"Applied DROP_INDEX: {label}.{property_name}")
     
     def commit(self):
         """Commit the transaction by persisting changes to disk"""
@@ -127,9 +201,24 @@ class Transaction:
             try:
                 # Verify constraints again before committing (for Consistency)
                 for entry in self.log:
-                    if not self._check_constraints(entry['details']):
+                    operation = entry['operation']
+                    details = entry['details']
+                    
+                    # For node operations, validate against constraints
+                    if operation in ['CREATE_NODE', 'UPDATE_NODE'] and not self._check_constraints(details):
                         self.rollback()
                         raise ConstraintViolationError("Cannot commit - constraint violation")
+                    
+                    # For constraint creation, validate again
+                    if operation == 'CREATE_CONSTRAINT':
+                        try:
+                            self._validate_constraint_creation(details.get('label'), details.get('property'))
+                        except Exception as e:
+                            self.rollback()
+                            raise ConstraintViolationError(f"Cannot commit constraint creation: {str(e)}")
+                
+                # Apply operations for constraints and indexes
+                self._apply_operations()
                 
                 # Save the database state to a JSON file (for Durability)
                 self._save_database_to_disk()

@@ -179,11 +179,11 @@ class SimpleCypherParser:
             auto_transaction = True
         
         try:
-            # Add the constraint
-            logging.debug(f"Adding unique constraint on {label}.{property_name}")
-            self.db.add_unique_constraint(label, property_name)
+            # Log the operation but don't add the constraint directly
+            # Let the transaction system handle it during commit
+            logging.debug(f"Preparing unique constraint on {label}.{property_name}")
             
-            # Log the operation
+            # Log the operation - this will be applied during commit
             if self.active_transaction:
                 self.transaction.log_operation("CREATE_CONSTRAINT", {
                     "label": label,
@@ -230,11 +230,14 @@ class SimpleCypherParser:
             auto_transaction = True
         
         try:
-            # Drop the constraint
-            logging.debug(f"Dropping unique constraint on {label}.{property_name}")
-            result = self.db.drop_constraint(label, property_name)
+            # Log the operation but don't drop the constraint directly
+            # Let the transaction system handle it during commit
+            logging.debug(f"Preparing drop of unique constraint on {label}.{property_name}")
             
-            # Log the operation
+            # Check if constraint exists before attempting to drop
+            result = (label, property_name) in self.db.constraints.get('unique', [])
+            
+            # Log the operation - this will be applied during commit
             if self.active_transaction:
                 self.transaction.log_operation("DROP_CONSTRAINT", {
                     "label": label,
@@ -283,11 +286,14 @@ class SimpleCypherParser:
             auto_transaction = True
         
         try:
-            # Create the index
-            logging.debug(f"Creating index on {label}.{property_name}")
-            result = self.db.create_index(label, property_name)
+            # Log the operation but don't create the index directly
+            # Let the transaction system handle it during commit
+            logging.debug(f"Preparing creation of index on {label}.{property_name}")
             
-            # Log the operation
+            # Check if index already exists
+            result = (label, property_name) not in self.db.indexed_properties
+            
+            # Log the operation - this will be applied during commit
             if self.active_transaction:
                 self.transaction.log_operation("CREATE_INDEX", {
                     "label": label,
@@ -335,11 +341,14 @@ class SimpleCypherParser:
             auto_transaction = True
         
         try:
-            # Drop the index
-            logging.debug(f"Dropping index on {label}.{property_name}")
-            result = self.db.drop_index(label, property_name)
+            # Log the operation but don't drop the index directly
+            # Let the transaction system handle it during commit
+            logging.debug(f"Preparing drop of index on {label}.{property_name}")
             
-            # Log the operation
+            # Check if index exists before attempting to drop
+            result = (label, property_name) in self.db.indexed_properties
+            
+            # Log the operation - this will be applied during commit
             if self.active_transaction:
                 self.transaction.log_operation("DROP_INDEX", {
                     "label": label,
