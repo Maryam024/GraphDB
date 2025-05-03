@@ -184,7 +184,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.error) {
                 showError(data.error);
             } else {
-                showResults(data.result, query);
+                // Pass execution time to showResults if available
+                const executionTime = data.execution_time_ms || null;
+                showResults(data.result, query, executionTime);
                 if (isDisplayQuery(query)) {
                     visualizeGraph(data.result);
                 }
@@ -243,7 +245,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Display query results
-    function showResults(results, query) {
+    function showResults(results, query, executionTime = null) {
+        // Display execution time if available
+        if (executionTime !== null) {
+            const timeInfo = document.createElement('div');
+            timeInfo.className = 'execution-time-info';
+            timeInfo.innerHTML = `<i data-feather="clock" class="me-1"></i> Executed in ${executionTime} ms`;
+            resultsContainer.appendChild(timeInfo);
+            feather.replace();
+        }
+        
         // Handle different result types
         if (Array.isArray(results)) {
             if (results.length === 0) {

@@ -79,8 +79,19 @@ def execute_query():
     logging.info(f"Executing query: {query}")
     
     try:
+        # Measure execution time
+        import time
+        start_time = time.time()
+        
+        # Execute the query
         result = parser.execute(query)
+        
+        # Calculate execution time
+        execution_time = time.time() - start_time
+        execution_time_ms = round(execution_time * 1000, 2)  # Convert to milliseconds with 2 decimal places
+        
         logging.info(f"Query result: {result}")
+        logging.info(f"Execution time: {execution_time_ms} ms")
         
         # Serialize the results if it's a list of objects
         if isinstance(result, list):
@@ -95,11 +106,17 @@ def execute_query():
                         serialized_item[key] = value
                 serialized_results.append(serialized_item)
             logging.info(f"Serialized results: {serialized_results}")
-            return jsonify({'result': serialized_results})
+            return jsonify({
+                'result': serialized_results, 
+                'execution_time_ms': execution_time_ms
+            })
         
         # If it's operation results like create/delete counts
         logging.info(f"Returning operation result: {result}")
-        return jsonify({'result': result})
+        return jsonify({
+            'result': result,
+            'execution_time_ms': execution_time_ms
+        })
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
