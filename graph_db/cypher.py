@@ -3,7 +3,7 @@ import operator
 
 def evaluate_condition(row, condition):
     """Evaluate a WHERE condition against a row of data"""
-    # Handle AND conditions
+    # Handle AND conditions (with precedence over OR)
     if ' AND ' in condition:
         parts = condition.split(' AND ')
         return all(evaluate_condition(row, part.strip()) for part in parts)
@@ -12,6 +12,19 @@ def evaluate_condition(row, condition):
     if ' OR ' in condition:
         parts = condition.split(' OR ')
         return any(evaluate_condition(row, part.strip()) for part in parts)
+    
+    # Handle NOT condition
+    if condition.upper().startswith('NOT '):
+        return not evaluate_condition(row, condition[4:].strip())
+    
+    # Handle parentheses for grouping and complex conditions
+    if '(' in condition and ')' in condition:
+        # Extract the expression inside parentheses
+        open_idx = condition.find('(')
+        close_idx = condition.rfind(')')
+        if open_idx == 0 and close_idx == len(condition) - 1:
+            # The entire condition is in parentheses, remove them and evaluate
+            return evaluate_condition(row, condition[1:close_idx].strip())
     
     # Handle comparison operators
     # n.property > value
