@@ -99,12 +99,16 @@ class GraphDatabase:
         self.constraints = {
             'unique': []  # List of (label, property) pairs that must be unique
         }
+        self.indexes = {}  # {'label': {'property': {value: [node_ids]}}}
+        self.indexed_properties = []  # List of (label, property) tuples that are indexed
         
     def clear(self):
         """Clear all nodes and relationships from the database"""
         self.nodes = {}
         self.relationships = {}
         self.constraints = {'unique': []}
+        self.indexes = {}
+        self.indexed_properties = []
         
     def create_node(self, labels, properties):
         """Create and add a node to the database"""
@@ -132,7 +136,12 @@ class GraphDatabase:
                         existing_node.properties[prop] == node.properties[prop]):
                         raise ValueError(f"Constraint violation: Node with {label}.{prop}='{node.properties[prop]}' already exists")
         
+        # Add the node to the database
         self.nodes[node.id] = node
+        
+        # Update all relevant indexes
+        self.update_indexes_for_node(node)
+        
         return node
     
     def add_relationship(self, relationship):
@@ -179,6 +188,9 @@ class GraphDatabase:
         """Delete a node and all its relationships"""
         if node_id not in self.nodes:
             raise ValueError(f"Node with id {node_id} does not exist")
+        
+        # Remove from indexes before deleting
+        self.remove_node_from_indexes(node_id)
         
         # Delete all relationships involving this node
         rel_ids_to_delete = []
@@ -236,12 +248,114 @@ class GraphDatabase:
             logging.debug(f"Constraint on {label}.{property_name} not found")
             return False
     
+    def create_index(self, label, property_name):
+        """Create an index on a label and property combination"""
+        index_key = (label, property_name)
+        if index_key in self.indexed_properties:
+            logging.debug(f"Index on {label}.{property_name} already exists")
+            return False
+            
+        # Initialize the index structure if needed
+        if label not in self.indexes:
+            self.indexes[label] = {}
+        if property_name not in self.indexes[label]:
+            self.indexes[label][property_name] = {}
+            
+        # Populate the index with existing data
+        for node_id, node in self.nodes.items():
+            if label in node.labels and property_name in node.properties:
+                value = node.properties[property_name]
+                if value not in self.indexes[label][property_name]:
+                    self.indexes[label][property_name][value] = []
+                self.indexes[label][property_name][value].append(node_id)
+                
+        # Add to the list of indexed properties
+        self.indexed_properties.append(index_key)
+        logging.debug(f"Created index on {label}.{property_name}")
+        return True
+        
+    def drop_index(self, label, property_name):
+        """Drop an index on a label and property combination"""
+        index_key = (label, property_name)
+        if index_key not in self.indexed_properties:
+            logging.debug(f"Index on {label}.{property_name} does not exist")
+            return False
+            
+        # Remove from indexes
+        if label in self.indexes and property_name in self.indexes[label]:
+            del self.indexes[label][property_name]
+            if not self.indexes[label]:  # If no more properties indexed for this label
+                del self.indexes[label]
+                
+        # Remove from indexed properties list
+        self.indexed_properties.remove(index_key)
+        logging.debug(f"Dropped index on {label}.{property_name}")
+        return True
+        
+    def update_indexes_for_node(self, node):
+        """Update all indexes for a node"""
+        for label, property_name in self.indexed_properties:
+            if label in node.labels and property_name in node.properties:
+                value = node.properties[property_name]
+                
+                # Add to index
+                if label not in self.indexes:
+                    self.indexes[label] = {}
+                if property_name not in self.indexes[label]:
+                    self.indexes[label][property_name] = {}
+                if value not in self.indexes[label][property_name]:
+                    self.indexes[label][property_name][value] = []
+                    
+                # Ensure no duplicates in the index
+                if node.id not in self.indexes[label][property_name][value]:
+                    self.indexes[label][property_name][value].append(node.id)
+                    
+    def remove_node_from_indexes(self, node_id):
+        """Remove a node from all indexes when it's deleted"""
+        node = self.nodes.get(node_id)
+        if not node:
+            return
+            
+        for label, property_name in self.indexed_properties:
+            if label in node.labels and property_name in node.properties:
+                value = node.properties[property_name]
+                
+                if (label in self.indexes and 
+                    property_name in self.indexes[label] and 
+                    value in self.indexes[label][property_name]):
+                    
+                    # Remove node ID from this index
+                    if node_id in self.indexes[label][property_name][value]:
+                        self.indexes[label][property_name][value].remove(node_id)
+                        
+                    # Clean up empty entries
+                    if not self.indexes[label][property_name][value]:
+                        del self.indexes[label][property_name][value]
+                        
+    def find_nodes_by_index(self, label, property_name, value):
+        """Find nodes using an index for better performance"""
+        if ((label, property_name) in self.indexed_properties and
+            label in self.indexes and
+            property_name in self.indexes[label] and
+            value in self.indexes[label][property_name]):
+            
+            # Use the index to directly get matching node IDs
+            node_ids = self.indexes[label][property_name][value]
+            return [self.nodes[node_id] for node_id in node_ids if node_id in self.nodes]
+        else:
+            # Fall back to full scan if no index or value not found
+            return [
+                node for node in self.nodes.values()
+                if label in node.labels and property_name in node.properties and node.properties[property_name] == value
+            ]
+    
     def serialize(self):
         """Convert the database to a serializable dictionary"""
         return {
             'nodes': [node.serialize() for node in self.nodes.values()],
             'relationships': [rel.serialize() for rel in self.relationships.values()],
-            'constraints': self.constraints
+            'constraints': self.constraints,
+            'indexes': self.indexed_properties
         }
     
     def deserialize(self, data):
@@ -250,6 +364,8 @@ class GraphDatabase:
         self.nodes = {}
         self.relationships = {}
         self.constraints = data.get('constraints', {'unique': []})
+        self.indexes = {}
+        self.indexed_properties = []
         
         # Restore nodes
         for node_data in data.get('nodes', []):
@@ -265,3 +381,13 @@ class GraphDatabase:
                 rel = Relationship(source_node, target_node, type_=rel_data['type'], properties=rel_data['properties'])
                 rel.id = rel_data['id']
                 self.relationships[rel.id] = rel
+                
+        # Restore indexes if present in the data
+        if 'indexes' in data:
+            # Restore indexed properties list
+            self.indexed_properties = data['indexes']
+            
+            # Rebuild the indexes from the node data
+            for label_prop in self.indexed_properties:
+                label, prop = label_prop
+                self.create_index(label, prop)
