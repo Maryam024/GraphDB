@@ -7,7 +7,7 @@ from flask import Flask, render_template, request, jsonify, session
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(message)s')
 from graph_db.database import GraphDatabase
-from graph_db.parser import CypherParser
+from graph_db.simple_parser import SimpleCypherParser
 
 # Create Flask app
 app = Flask(__name__)
@@ -15,81 +15,48 @@ app.secret_key = os.environ.get("SESSION_SECRET", "dev_secret_key")
 
 # Initialize the graph database
 graph_db = GraphDatabase()
-parser = CypherParser(graph_db)
+parser = SimpleCypherParser(graph_db)
 
 # Example database for demo purposes
 def initialize_example_db():
     # Reset the database
-    graph_db.nodes = {}
-    graph_db.relationships = {}
+    graph_db.clear()
     
-    # Create some nodes and relationships
     logging.debug("Creating example database")
     
-    # Create Person nodes
-    parser.execute("CREATE (:Person {name: 'Alice', age: 30})")
-    parser.execute("CREATE (:Person {name: 'Bob', age: 40})")
-    parser.execute("CREATE (:Person {name: 'Charlie', age: 25})")
+    # First create all nodes
+    alice = graph_db.create_node(["Person"], {"name": "Alice", "age": 30})
+    bob = graph_db.create_node(["Person"], {"name": "Bob", "age": 40})
+    charlie = graph_db.create_node(["Person"], {"name": "Charlie", "age": 25})
+    matrix = graph_db.create_node(["Movie"], {"title": "The Matrix", "year": 1999})
+    inception = graph_db.create_node(["Movie"], {"title": "Inception", "year": 2010})
     
-    # Create Movie nodes
-    parser.execute("CREATE (:Movie {title: 'The Matrix', year: 1999})")
-    parser.execute("CREATE (:Movie {title: 'Inception', year: 2010})")
+    logging.debug(f"Created {len(graph_db.nodes)} nodes")
     
-    logging.debug(f"Created nodes: {len(graph_db.nodes)}")
+    # Then create relationships directly
+    rel1 = graph_db.create_relationship(alice, bob, "KNOWS", {"since": 2015})
+    rel2 = graph_db.create_relationship(bob, charlie, "KNOWS", {"since": 2018})
+    rel3 = graph_db.create_relationship(alice, matrix, "WATCHED", {"rating": 5})
+    rel4 = graph_db.create_relationship(bob, inception, "WATCHED", {"rating": 4})
+    rel5 = graph_db.create_relationship(bob, matrix, "WATCHED", {"rating": 3})
+    rel6 = graph_db.create_relationship(charlie, matrix, "WATCHED", {"rating": 4})
     
-    # Get node IDs for later use
-    alice_id = None
-    bob_id = None
-    charlie_id = None
-    matrix_id = None
-    inception_id = None
+    # Create a FRIEND relationship
+    friend_rel = graph_db.create_relationship(alice, bob, "FRIEND", {"since": 2010})
     
-    for node in graph_db.nodes.values():
-        if 'Person' in node.labels:
-            if node.properties.get('name') == 'Alice':
-                alice_id = node.id
-            elif node.properties.get('name') == 'Bob':
-                bob_id = node.id
-            elif node.properties.get('name') == 'Charlie':
-                charlie_id = node.id
-        elif 'Movie' in node.labels:
-            if node.properties.get('title') == 'The Matrix':
-                matrix_id = node.id
-            elif node.properties.get('title') == 'Inception':
-                inception_id = node.id
-    
-    # Create KNOWS relationships between people
-    parser.execute("MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'}) CREATE (a)-[:KNOWS {since: 2015}]->(b)")
-    parser.execute("MATCH (a:Person {name: 'Bob'}), (c:Person {name: 'Charlie'}) CREATE (a)-[:KNOWS {since: 2018}]->(c)")
-    
-    # Create WATCHED relationships between people and movies
-    parser.execute("MATCH (a:Person {name: 'Alice'}), (m:Movie {title: 'The Matrix'}) CREATE (a)-[:WATCHED {rating: 5}]->(m)")
-    parser.execute("MATCH (b:Person {name: 'Bob'}), (m:Movie {title: 'Inception'}) CREATE (b)-[:WATCHED {rating: 4}]->(m)")
-    parser.execute("MATCH (b:Person {name: 'Bob'}), (m:Movie {title: 'The Matrix'}) CREATE (b)-[:WATCHED {rating: 3}]->(m)")
-    parser.execute("MATCH (c:Person {name: 'Charlie'}), (m:Movie {title: 'The Matrix'}) CREATE (c)-[:WATCHED {rating: 4}]->(m)")
-    
-    # Directly create a relationship for testing (alternative approach)
-    if alice_id and bob_id:
-        alice_node = graph_db.nodes[alice_id]
-        bob_node = graph_db.nodes[bob_id]
-        from graph_db.database import Relationship
-        rel = Relationship(alice_node, bob_node, type_="FRIEND", properties={"since": 2010})
-        graph_db.add_relationship(rel)
-    
-    logging.debug(f"Created relationships: {len(graph_db.relationships)}")
+    logging.debug(f"Created {len(graph_db.relationships)} relationships")
     
     # Log all relationships for debugging
-    for rel in graph_db.relationships.values():
-        from_node = graph_db.nodes[rel.source_id]
-        to_node = graph_db.nodes[rel.target_id]
-        from_props = from_node.properties.get('name', '') or from_node.properties.get('title', '')
-        to_props = to_node.properties.get('name', '') or to_node.properties.get('title', '')
-        logging.debug(f"Relationship: {from_props} -[{rel.type}]-> {to_props}")
-    
-    # Validate Alice's relationships
-    if alice_id:
-        alice_rels = graph_db.find_relationships_from(alice_id)
-        logging.debug(f"Alice has {len(alice_rels)} relationships")
+    for rel_id, rel in graph_db.relationships.items():
+        source_node = graph_db.nodes[rel.source_id]
+        target_node = graph_db.nodes[rel.target_id]
+        source_name = source_node.properties.get('name', '') or source_node.properties.get('title', '')
+        target_name = target_node.properties.get('name', '') or target_node.properties.get('title', '')
+        logging.debug(f"Relationship {rel_id}: {source_name} -[{rel.type}]-> {target_name}")
+
+    # Test query to verify FRIENDS relationship works
+    result = parser.execute("MATCH (p:Person)-[r:FRIEND]->(friend) RETURN p.name, friend.name, r.since")
+    logging.debug(f"FRIEND relationship test: {result}")
 
 # Initialize example database
 initialize_example_db()

@@ -99,6 +99,24 @@ class GraphDatabase:
         self.constraints = {
             'unique': []  # List of (label, property) pairs that must be unique
         }
+        
+    def clear(self):
+        """Clear all nodes and relationships from the database"""
+        self.nodes = {}
+        self.relationships = {}
+        self.constraints = {'unique': []}
+        
+    def create_node(self, labels, properties):
+        """Create and add a node to the database"""
+        node = Node(labels=labels, properties=properties)
+        self.add_node(node)
+        return node
+        
+    def create_relationship(self, source_node, target_node, type_, properties):
+        """Create and add a relationship to the database"""
+        rel = Relationship(source_node, target_node, type_=type_, properties=properties)
+        self.add_relationship(rel)
+        return rel
     
     def add_node(self, node):
         """Add a node to the database with constraint checking"""

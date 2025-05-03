@@ -245,6 +245,9 @@ class CypherParser:
         match_pattern = r"MATCH\s+(.*?)(?:\s+WHERE\s+(.*?))?(?:\s+RETURN\s+(.*?))?(?:\s+LIMIT\s+(\d+))?$"
         match = re.search(match_pattern, query, re.IGNORECASE | re.DOTALL)
         
+        # Debug logging
+        logging.debug(f"Executing MATCH query: {query}")
+        
         if not match:
             raise ValueError(f"Invalid MATCH query: {query}")
         
