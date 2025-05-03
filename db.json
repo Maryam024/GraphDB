@@ -1,18 +1,17 @@
 {
   "nodes": [
     {
-      "id": "8df97761-0a05-457f-9dd2-d5fdb2c9dd1c",
+      "id": "f6781ff2-be1e-4152-80f3-f08840674771",
       "labels": [
         "Person"
       ],
       "properties": {
         "name": "Alice",
-        "age": 30,
-        "job": "Developer"
+        "age": 30
       }
     },
     {
-      "id": "3a8c5b18-64d0-4439-bd9b-50fbb3c28548",
+      "id": "e138f804-b68c-4b80-a705-df81661aac26",
       "labels": [
         "Person"
       ],
@@ -22,7 +21,7 @@
       }
     },
     {
-      "id": "195db463-c420-4484-82e6-ae7bd556f80f",
+      "id": "52648e0b-f222-4182-a0b1-aeabbe9ed10c",
       "labels": [
         "Person"
       ],
@@ -32,7 +31,17 @@
       }
     },
     {
-      "id": "6cd52fd4-d1b8-4818-90ef-9092d460c68d",
+      "id": "7f9a4c9b-49e8-40f4-8b1e-33c007cb7911",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Dave",
+        "age": 35
+      }
+    },
+    {
+      "id": "16dbb360-a845-4e1b-a47d-5845da086baf",
       "labels": [
         "Movie"
       ],
@@ -42,7 +51,7 @@
       }
     },
     {
-      "id": "fdb4d306-dfb8-4e7e-9946-5097af54c5a2",
+      "id": "c41f1133-d970-4751-a1ce-8704a9fdb31f",
       "labels": [
         "Movie"
       ],
@@ -52,7 +61,7 @@
       }
     },
     {
-      "id": "69a2523b-f408-4bf8-a141-5da23abf06ad",
+      "id": "b75a1ae7-09d8-426b-8f90-f4748c8707f7",
       "labels": [
         "Person"
       ],
@@ -60,83 +69,99 @@
         "name": "Dave",
         "age": 35
       }
+    },
+    {
+      "id": "1701c2f7-7dfa-4697-b9ef-4213155c04af",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Eve",
+        "age": 28
+      }
+    },
+    {
+      "id": "7ee526d5-fc3f-4578-94c2-b80161c97519",
+      "labels": [
+        "User"
+      ],
+      "properties": {
+        "name": "Frank",
+        "email": "frank@example.com"
+      }
     }
   ],
   "relationships": [
     {
-      "id": "75e48ec5-7f20-48b1-93ee-f80743bb13ef",
-      "source_id": "8df97761-0a05-457f-9dd2-d5fdb2c9dd1c",
-      "target_id": "3a8c5b18-64d0-4439-bd9b-50fbb3c28548",
+      "id": "fc89bbc7-5891-46bf-b8ec-57b62c684cc7",
+      "source_id": "f6781ff2-be1e-4152-80f3-f08840674771",
+      "target_id": "e138f804-b68c-4b80-a705-df81661aac26",
       "type": "KNOWS",
       "properties": {
         "since": 2015
       }
     },
     {
-      "id": "5c8a2750-ff12-4f18-a91c-bef9642ccff3",
-      "source_id": "3a8c5b18-64d0-4439-bd9b-50fbb3c28548",
-      "target_id": "195db463-c420-4484-82e6-ae7bd556f80f",
+      "id": "89e28ff1-42fb-482b-8434-7c1620c9a371",
+      "source_id": "e138f804-b68c-4b80-a705-df81661aac26",
+      "target_id": "52648e0b-f222-4182-a0b1-aeabbe9ed10c",
       "type": "KNOWS",
       "properties": {
         "since": 2018
       }
     },
     {
-      "id": "3803b340-2aff-4bcb-addf-76484dcf1bb7",
-      "source_id": "8df97761-0a05-457f-9dd2-d5fdb2c9dd1c",
-      "target_id": "6cd52fd4-d1b8-4818-90ef-9092d460c68d",
+      "id": "25f21d56-7ee9-4f9b-9821-0303d99d0aaa",
+      "source_id": "f6781ff2-be1e-4152-80f3-f08840674771",
+      "target_id": "16dbb360-a845-4e1b-a47d-5845da086baf",
       "type": "WATCHED",
       "properties": {
         "rating": 5
       }
     },
     {
-      "id": "0b84ae1b-215f-4062-91b2-989da9a728ee",
-      "source_id": "3a8c5b18-64d0-4439-bd9b-50fbb3c28548",
-      "target_id": "fdb4d306-dfb8-4e7e-9946-5097af54c5a2",
+      "id": "f4600408-30f0-4f40-9afb-d1ef3358ff8e",
+      "source_id": "e138f804-b68c-4b80-a705-df81661aac26",
+      "target_id": "c41f1133-d970-4751-a1ce-8704a9fdb31f",
       "type": "WATCHED",
       "properties": {
         "rating": 4
       }
     },
     {
-      "id": "6c36759e-a4eb-4a15-8699-6f77349c7b10",
-      "source_id": "3a8c5b18-64d0-4439-bd9b-50fbb3c28548",
-      "target_id": "6cd52fd4-d1b8-4818-90ef-9092d460c68d",
+      "id": "dc501e67-f965-47cc-a2db-72430187fcad",
+      "source_id": "e138f804-b68c-4b80-a705-df81661aac26",
+      "target_id": "16dbb360-a845-4e1b-a47d-5845da086baf",
       "type": "WATCHED",
       "properties": {
         "rating": 3
       }
     },
     {
-      "id": "102ead4d-1eb2-427b-add9-9ce42efa68a4",
-      "source_id": "195db463-c420-4484-82e6-ae7bd556f80f",
-      "target_id": "6cd52fd4-d1b8-4818-90ef-9092d460c68d",
+      "id": "7b626d7a-4f50-4977-bdfb-5f178831d32c",
+      "source_id": "52648e0b-f222-4182-a0b1-aeabbe9ed10c",
+      "target_id": "16dbb360-a845-4e1b-a47d-5845da086baf",
       "type": "WATCHED",
       "properties": {
         "rating": 4
       }
     },
     {
-      "id": "4ff2040c-c316-49cc-a577-c2e57fc7cee8",
-      "source_id": "8df97761-0a05-457f-9dd2-d5fdb2c9dd1c",
-      "target_id": "3a8c5b18-64d0-4439-bd9b-50fbb3c28548",
+      "id": "9cb6169d-8e76-428e-b6d4-425644ccddf3",
+      "source_id": "f6781ff2-be1e-4152-80f3-f08840674771",
+      "target_id": "e138f804-b68c-4b80-a705-df81661aac26",
       "type": "FRIEND",
       "properties": {
         "since": 2010
       }
-    },
-    {
-      "id": "a0300147-e99b-4be4-869d-536ca2f165a7",
-      "source_id": "8df97761-0a05-457f-9dd2-d5fdb2c9dd1c",
-      "target_id": "69a2523b-f408-4bf8-a141-5da23abf06ad",
-      "type": "KNOWS",
-      "properties": {
-        "since": 2020
-      }
     }
   ],
   "constraints": {
-    "unique": []
+    "unique": [
+      [
+        "User",
+        "name"
+      ]
+    ]
   }
 }
