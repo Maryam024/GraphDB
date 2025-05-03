@@ -150,6 +150,27 @@ def load_database():
         logging.error(f"Load error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/constraints', methods=['GET'])
+def get_constraints():
+    try:
+        # Get the current database constraints
+        constraints = graph_db.constraints
+        
+        # Format constraints for display
+        formatted_constraints = []
+        
+        for label, property_name in constraints.get('unique', []):
+            formatted_constraints.append({
+                'type': 'UNIQUE',
+                'label': label,
+                'property': property_name
+            })
+            
+        return jsonify({'constraints': formatted_constraints})
+    except Exception as e:
+        logging.error(f"Error getting constraints: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/example_queries')
 def example_queries():
     examples = [

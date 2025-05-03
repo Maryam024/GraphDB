@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const loadExamplesBtn = document.getElementById('load-examples-btn');
     const resultsContainer = document.getElementById('results-container');
     const graphContainer = document.getElementById('graph-container');
+    const constraintsContainer = document.getElementById('constraints-container');
+    const refreshConstraintsBtn = document.getElementById('refresh-constraints-btn');
     
     // Bootstrap modals
     const examplesModal = new bootstrap.Modal(document.getElementById('examples-modal'));
@@ -21,6 +23,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const confirmSaveBtn = document.getElementById('confirm-save-btn');
     const confirmLoadBtn = document.getElementById('confirm-load-btn');
     const examplesList = document.getElementById('examples-list');
+    
+    // Load constraints on page load
+    loadConstraints();
     
     // Execute query
     executeBtn.addEventListener('click', function() {

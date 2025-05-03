@@ -57,6 +57,23 @@
                 <div id="graph-container" style="height: 300px; background-color: #21262d; border-radius: 0.25rem;"></div>
             </div>
         </div>
+        
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Active Constraints</h5>
+                <button class="btn btn-sm btn-outline-info" id="refresh-constraints-btn">
+                    <i data-feather="refresh-cw"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="constraints-container">
+                    <div class="text-center text-muted py-3">
+                        <i data-feather="lock" style="width: 24px; height: 24px;"></i>
+                        <p class="mt-2 small">No active constraints</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div class="card">
             <div class="card-header">
@@ -75,6 +92,29 @@
                     <li><code>MATCH (n) DELETE n</code> - Delete nodes (and relationships)</li>
                     <li><code>MATCH (n) SET n.prop = 'value' RETURN n</code> - Update properties</li>
                 </ul>
+                
+                <h6>Constraints</h6>
+                <ul class="mb-3 small">
+                    <li><code>CREATE CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE</code> - Add uniqueness constraint</li>
+                    <li><code>DROP CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE</code> - Remove constraint</li>
+                </ul>
+                
+                <h6>Transactions</h6>
+                <ul class="mb-3 small">
+                    <li><code>BEGIN</code> - Start a transaction</li>
+                    <li><code>COMMIT</code> - Commit changes to the database</li>
+                    <li><code>ROLLBACK</code> - Revert changes in the current transaction</li>
+                </ul>
+                
+                <h6>ACID Properties</h6>
+                <p class="small">This graph database implements ACID properties:</p>
+                <ul class="small mb-3">
+                    <li><strong>Atomicity</strong> - Transactions are all-or-nothing</li>
+                    <li><strong>Consistency</strong> - Database remains valid after transactions</li>
+                    <li><strong>Isolation</strong> - Concurrent transactions don't interfere</li>
+                    <li><strong>Durability</strong> - Committed changes persist</li>
+                </ul>
+                
                 <h6>Example Database</h6>
                 <p class="small">A sample database with Person and Movie nodes is already loaded with relationships between them.</p>
             </div>
