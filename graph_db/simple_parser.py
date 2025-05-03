@@ -47,9 +47,10 @@ class SimpleCypherParser:
                 result = self._execute_create(query)
                 logging.debug(f"CREATE result: {result}")
                 
-                # Automatically commit if this was an auto-transaction
+                # For auto-transactions, just rollback (don't save to disk)
                 if auto_transaction:
-                    self.transaction.commit()
+                    logging.debug("Auto-rolling back CREATE operation to prevent disk write")
+                    self.transaction.rollback()
                     self.active_transaction = False
                 
                 return result
@@ -59,9 +60,10 @@ class SimpleCypherParser:
                 result = self._execute_delete(query)
                 logging.debug(f"MATCH-DELETE result: {result}")
                 
-                # Automatically commit if this was an auto-transaction
+                # For auto-transactions, just rollback (don't save to disk)
                 if auto_transaction:
-                    self.transaction.commit()
+                    logging.debug("Auto-rolling back DELETE operation to prevent disk write")
+                    self.transaction.rollback()
                     self.active_transaction = False
                 
                 return result
@@ -71,18 +73,11 @@ class SimpleCypherParser:
                 result = self._execute_match(query)
                 logging.debug(f"MATCH result: {result}")
                 
-                # Automatically commit if this was an auto-transaction (for write operations)
+                # Always rollback auto-transactions (no disk writing)
                 if auto_transaction:
-                    if "SET" in query_upper or "CREATE" in query_upper:
-                        # This is a write query in auto-transaction mode
-                        logging.debug("Auto-committing after write operation")
-                        self.transaction.commit()
-                        self.active_transaction = False
-                    else:
-                        # For read-only queries, just rollback the auto-transaction
-                        logging.debug("Auto-rolling back after read-only operation")
-                        self.transaction.rollback()
-                        self.active_transaction = False
+                    logging.debug("Auto-rolling back after operation")
+                    self.transaction.rollback()
+                    self.active_transaction = False
                 
                 return result
                 
@@ -91,9 +86,10 @@ class SimpleCypherParser:
                 result = self._execute_delete(query)
                 logging.debug(f"DELETE result: {result}")
                 
-                # Automatically commit if this was an auto-transaction
+                # For auto-transactions, just rollback (don't save to disk)
                 if auto_transaction:
-                    self.transaction.commit()
+                    logging.debug("Auto-rolling back DELETE operation to prevent disk write")
+                    self.transaction.rollback()
                     self.active_transaction = False
                 
                 return result
@@ -624,144 +620,130 @@ class SimpleCypherParser:
             return True
         elif value_str.lower() == 'false':
             return False
-        elif value_str.isdigit():
-            return int(value_str)
-        elif re.match(r'^-?\d+(\.\d+)?$', value_str):
-            return float(value_str)
+        elif value_str.lower() == 'null':
+            return None
         else:
-            return value_str
+            try:
+                if '.' in value_str:
+                    return float(value_str)
+                else:
+                    return int(value_str)
+            except ValueError:
+                return value_str
     
     def _execute_set(self, query, set_match):
         """Execute a SET query to update properties"""
-        logging.debug(f"Executing SET query: {query}")
-        
-        # Extract parts of the SET query
-        patterns = set_match.group(1)
+        match_part = set_match.group(1)
         where_clause = set_match.group(2)
         set_clause = set_match.group(3)
-        return_clause = set_match.group(4) or "*"
-        limit = int(set_match.group(5)) if set_match.group(5) else None
+        return_clause = set_match.group(4)
         
-        # First, find all nodes that match the MATCH pattern
-        match_query = f"MATCH {patterns}"
-        if where_clause:
-            match_query += f" WHERE {where_clause}"
-        match_query += " RETURN *"
+        # Find matching nodes
+        variable_nodes = self._find_nodes_for_match(match_part)
         
-        # Get all nodes that match the pattern
-        matching_rows = self._execute_match(match_query)
+        # Extract the node variable and properties to set
+        set_pattern = r"(\w+)\.(\w+)\s*=\s*([^,]+)"
+        set_matches = re.findall(set_pattern, set_clause)
         
-        # Process the SET clause
-        set_items = [item.strip() for item in set_clause.split(',')]
+        if not set_matches:
+            raise ValueError(f"Invalid SET clause: {set_clause}")
+        
+        # Group property assignments by variable
+        updates_by_var = {}
+        for var_name, prop_name, prop_value in set_matches:
+            if var_name not in updates_by_var:
+                updates_by_var[var_name] = {}
+            
+            updates_by_var[var_name][prop_name] = self._parse_value(prop_value.strip())
+        
+        # Apply updates
         updated_nodes = []
-        
-        for row in matching_rows:
-            for set_item in set_items:
-                # Parse the SET item (e.g., n.property = value)
-                prop_pattern = r"(\w+)\.(\w+)\s*=\s*(.+)"
-                prop_match = re.match(prop_pattern, set_item)
+        for var_name, props in updates_by_var.items():
+            if var_name not in variable_nodes:
+                continue
+            
+            for node in variable_nodes[var_name]:
+                # Apply property updates
+                for prop_name, prop_value in props.items():
+                    node.properties[prop_name] = prop_value
                 
-                if not prop_match:
-                    continue
-                
-                var_name = prop_match.group(1)
-                prop_name = prop_match.group(2)
-                value_str = prop_match.group(3).strip()
-                
-                # Get the node to update
-                if var_name not in row:
-                    continue
-                
-                node = row[var_name]
-                if not hasattr(node, 'properties'):
-                    continue
-                
-                # Parse the value
-                value = self._parse_value(value_str)
-                
-                # Get old value for logging
-                old_value = node.properties.get(prop_name)
-                
-                # Update the property
-                node.properties[prop_name] = value
-                if node not in updated_nodes:
-                    updated_nodes.append(node)
-                
-                logging.debug(f"Updated {var_name}.{prop_name} = {value} for node {node.id}")
+                updated_nodes.append(node)
                 
                 # Log operation if in transaction
                 if self.active_transaction:
-                    self.transaction.log_operation("UPDATE_PROPERTY", {
+                    self.transaction.log_operation("UPDATE_NODE", {
                         "node_id": node.id,
-                        "property": prop_name,
-                        "old_value": old_value,
-                        "new_value": value
+                        "properties": props
                     })
         
-        # If there's a RETURN clause, return the updated nodes
-        if return_clause != "*":
-            # Create a result with only the updated nodes
-            updated_rows = []
-            for row in matching_rows:
-                if any(entity in updated_nodes for entity in row.values() if hasattr(entity, 'properties')):
-                    updated_rows.append(row)
+        # Return updated nodes if requested
+        if return_clause:
+            result_rows = []
+            for var_name in variable_nodes:
+                for node in variable_nodes[var_name]:
+                    result_rows.append({var_name: node})
             
-            # Process the return clause
-            return self._process_return_properties(updated_rows, return_clause)
-        else:
-            # Just return the updated nodes
-            return [{"updated": len(updated_nodes)}]
+            if return_clause != "*":
+                return self._process_return_properties(result_rows, return_clause)
+            
+            return result_rows
+        
+        return {"updated": len(updated_nodes)}
     
     def _execute_delete(self, query):
         """Execute a DELETE query"""
-        # If it's a MATCH ... DELETE query
-        delete_pattern = r"MATCH\s+(.*?)(?:\s+WHERE\s+(.*?))?\s+DELETE\s+(.*?)$"
-        delete_match = re.search(delete_pattern, query, re.IGNORECASE | re.DOTALL)
-        
-        if delete_match:
-            match_pattern = delete_match.group(1)
-            where_clause = delete_match.group(2)
-            delete_vars = [v.strip() for v in delete_match.group(3).split(',')]
+        # Check if it's a MATCH...DELETE query
+        if "MATCH " in query.upper():
+            match_pattern = r"MATCH\s+(.*?)(?:\s+WHERE\s+(.*?))?\s+DELETE\s+(.*?)$"
+            match = re.search(match_pattern, query, re.IGNORECASE | re.DOTALL)
             
-            # First, execute a MATCH to find what to delete
-            match_query = f"MATCH {match_pattern}"
-            if where_clause:
-                match_query += f" WHERE {where_clause}"
-            match_query += " RETURN " + ", ".join(delete_vars)
+            if not match:
+                raise ValueError(f"Invalid MATCH DELETE query: {query}")
             
-            match_result = self._execute_match(match_query)
+            match_part = match.group(1)
+            where_clause = match.group(2)
+            delete_items = match.group(3).split(',')
+            delete_items = [item.strip() for item in delete_items]
             
-            # Delete the matched nodes/relationships
-            deleted_nodes = 0
-            deleted_rels = 0
+            # Find matching nodes
+            variable_nodes = self._find_nodes_for_match(match_part)
             
-            # Track what we've already deleted
-            deleted_node_ids = set()
-            deleted_rel_ids = set()
+            # Collect nodes and relationships to delete
+            deleted_node_count = 0
+            deleted_rel_count = 0
             
-            for row in match_result:
-                for var in delete_vars:
-                    if var in row:
-                        entity = row[var]
+            for item in delete_items:
+                if item in variable_nodes:
+                    for node in variable_nodes[item]:
+                        # Check if this node should be deleted
+                        # First, we need to delete all relationships involving this node
+                        related_rels = []
+                        for rel_id, rel in self.db.relationships.items():
+                            if rel.source_id == node.id or rel.target_id == node.id:
+                                related_rels.append(rel_id)
                         
-                        if hasattr(entity, 'source_id') and hasattr(entity, 'target_id'):  # It's a relationship
-                            if entity.id not in deleted_rel_ids:
-                                try:
-                                    self.db.delete_relationship(entity.id)
-                                    deleted_rels += 1
-                                    deleted_rel_ids.add(entity.id)
-                                except ValueError as e:
-                                    logging.error(f"Failed to delete relationship: {str(e)}")
-                        elif hasattr(entity, 'labels'):  # It's a node
-                            if entity.id not in deleted_node_ids:
-                                try:
-                                    self.db.delete_node(entity.id)
-                                    deleted_nodes += 1
-                                    deleted_node_ids.add(entity.id)
-                                except ValueError as e:
-                                    logging.error(f"Failed to delete node: {str(e)}")
+                        # Delete the relationships
+                        for rel_id in related_rels:
+                            del self.db.relationships[rel_id]
+                            deleted_rel_count += 1
+                            
+                            # Log operation if in transaction
+                            if self.active_transaction:
+                                self.transaction.log_operation("DELETE_RELATIONSHIP", {
+                                    "relationship_id": rel_id
+                                })
+                        
+                        # Now delete the node
+                        del self.db.nodes[node.id]
+                        deleted_node_count += 1
+                        
+                        # Log operation if in transaction
+                        if self.active_transaction:
+                            self.transaction.log_operation("DELETE_NODE", {
+                                "node_id": node.id
+                            })
             
-            return {"deleted_nodes": deleted_nodes, "deleted_relationships": deleted_rels}
-        
-        # If we're here, it's an invalid query
-        raise ValueError(f"Invalid DELETE query: {query}")
+            return {"deleted_nodes": deleted_node_count, "deleted_relationships": deleted_rel_count}
+        else:
+            # Simple DELETE, directly targeting node IDs
+            raise ValueError("Direct DELETE without MATCH not supported yet")
