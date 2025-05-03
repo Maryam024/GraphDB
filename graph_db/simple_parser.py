@@ -121,22 +121,22 @@ class SimpleCypherParser:
                     if source_node.id == target_node.id:
                         continue
                     
-                    # Check if target node with given name exists (Dave in this case)
-                    target_name = target_node.properties.get('name')
-                    if target_name == 'Dave':
-                        # Log info about the Dave node we found
-                        logging.debug(f"Found Dave node with ID: {target_node.id}")
-                        
-                        # Create the relationship
-                        rel = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
-                        created_rels.append(rel)
-                        logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
+                    # Instead of returning the matched nodes, actually create the relationship
+                    # Debug each node to ensure we're creating the right relationship
+                    logging.debug(f"Source node: {source_node.properties}")
+                    logging.debug(f"Target node: {target_node.properties}")
                     
+                    # Create the relationship
+                    rel = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
+                    created_rels.append(rel)
+                    logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
             
-            # Return the actual success message, not the matched nodes
+            # Return a message about successfully created relationships
             if created_rels:
                 logging.debug(f"Created {len(created_rels)} relationships of type {rel_type}")
-                return {"created_relationships": len(created_rels)}
+                
+                # Just return a confirmation message instead of nodes
+                return [{"success": f"Created {len(created_rels)} relationships"}]
             else:
                 # If no relationships created, check why
                 if from_var in found_nodes and to_var in found_nodes:
@@ -146,7 +146,7 @@ class SimpleCypherParser:
                         logging.debug(f"No target nodes found for variable {to_var}")
                 
                 # Return empty result
-                return {"created_relationships": 0}
+                return [{"message": "No relationships created"}]
         
         # If we're here, it's an invalid query
         raise ValueError(f"Invalid CREATE query: {query}")
@@ -172,6 +172,9 @@ class SimpleCypherParser:
                 for key, value in prop_items:
                     props[key] = self._parse_value(value.strip())
             
+            # Debug logging
+            logging.debug(f"Looking for {var_name} with props: {props}")
+            
             # Find matching nodes
             matching_nodes = []
             for node in self.db.nodes.values():
@@ -180,13 +183,33 @@ class SimpleCypherParser:
                     continue
                 
                 # Check node properties
-                if not all(node.properties.get(k) == v for k, v in props.items()):
+                props_match = True
+                for k, v in props.items():
+                    node_value = node.properties.get(k)
+                    if node_value != v:
+                        props_match = False
+                        break
+                
+                if not props_match:
                     continue
                 
                 # This node matches our criteria
                 matching_nodes.append(node)
+                logging.debug(f"Found matching node: {node.properties}")
             
             variable_nodes[var_name] = matching_nodes
+            
+            # Extra debug info
+            if not matching_nodes:
+                logging.debug(f"No nodes found matching {var_name} with props: {props}")
+            else:
+                logging.debug(f"Found {len(matching_nodes)} nodes for {var_name}")
+        
+        # Further debug info
+        for var, nodes in variable_nodes.items():
+            logging.debug(f"Variable {var} has {len(nodes)} matching nodes")
+            for node in nodes:
+                logging.debug(f"  Node: {node.properties}")
         
         return variable_nodes
     
