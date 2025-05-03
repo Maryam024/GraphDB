@@ -75,6 +75,40 @@
             </div>
         </div>
 
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Database Indexes</h5>
+                <button class="btn btn-sm btn-outline-info" id="refresh-indexes-btn">
+                    <i data-feather="refresh-cw"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="indexes-container">
+                    <div class="text-center text-muted py-3">
+                        <i data-feather="search" style="width: 24px; height: 24px;"></i>
+                        <p class="mt-2 small">No active indexes</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Index Performance</h5>
+                <button class="btn btn-sm btn-outline-info" id="refresh-stats-btn">
+                    <i data-feather="bar-chart-2"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="index-stats-container">
+                    <div class="text-center text-muted py-3">
+                        <i data-feather="activity" style="width: 24px; height: 24px;"></i>
+                        <p class="mt-2 small">No index statistics available</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">Cypher Help</h5>
@@ -97,6 +131,13 @@
                 <ul class="mb-3 small">
                     <li><code>CREATE CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE</code> - Add uniqueness constraint</li>
                     <li><code>DROP CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE</code> - Remove constraint</li>
+                </ul>
+                
+                <h6>Indexes</h6>
+                <ul class="mb-3 small">
+                    <li><code>CREATE INDEX ON :Label(property)</code> - Create index for faster lookups</li>
+                    <li><code>DROP INDEX ON :Label(property)</code> - Remove index</li>
+                    <li><code>MATCH (n:Label {property: 'value'}) RETURN n</code> - Auto-uses indexes when available</li>
                 </ul>
                 
                 <h6>Transactions</h6>

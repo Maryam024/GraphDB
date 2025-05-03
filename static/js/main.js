@@ -13,6 +13,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const graphContainer = document.getElementById('graph-container');
     const constraintsContainer = document.getElementById('constraints-container');
     const refreshConstraintsBtn = document.getElementById('refresh-constraints-btn');
+    const indexesContainer = document.getElementById('indexes-container');
+    const refreshIndexesBtn = document.getElementById('refresh-indexes-btn');
+    const indexStatsContainer = document.getElementById('index-stats-container');
+    const refreshStatsBtn = document.getElementById('refresh-stats-btn');
     
     // Bootstrap modals
     const examplesModal = new bootstrap.Modal(document.getElementById('examples-modal'));
@@ -24,8 +28,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const confirmLoadBtn = document.getElementById('confirm-load-btn');
     const examplesList = document.getElementById('examples-list');
     
-    // Load constraints on page load
+    // Load database metadata on page load
     loadConstraints();
+    loadIndexes();
+    loadIndexStats();
     
     // Execute query
     executeBtn.addEventListener('click', function() {

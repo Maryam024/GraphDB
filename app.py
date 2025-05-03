@@ -258,6 +258,19 @@ def example_queries():
         "DROP CONSTRAINT ON (p:Person) ASSERT p.name IS UNIQUE",
         "CREATE CONSTRAINT ON (m:Movie) ASSERT m.title IS UNIQUE",
         
+        # Index Operations
+        "CREATE INDEX ON :Person(name)",
+        "CREATE INDEX ON :Movie(title)",
+        "DROP INDEX ON :Person(name)",
+        
+        # Using Indexed Properties for Efficient Queries
+        "MATCH (p:Person {name: 'Alice'}) RETURN p",
+        "MATCH (m:Movie {title: 'The Matrix'}) RETURN m",
+        "MATCH (p:Person)-[:WATCHED]->(m:Movie {title: 'The Matrix'}) RETURN p.name",
+        
+        # Complex Transactions with Indexes
+        "BEGIN\nCREATE INDEX ON :Person(email)\nCREATE INDEX ON :Person(age)\nCOMMIT",
+        
         # Advanced Transaction Examples
         "BEGIN\nCREATE CONSTRAINT ON (p:Person) ASSERT p.email IS UNIQUE\nCOMMIT",
         "BEGIN\nCREATE (:Person {name: 'Frank', email: 'frank@example.com'})\nCREATE (:Person {name: 'Grace', email: 'grace@example.com'})\nCOMMIT"
