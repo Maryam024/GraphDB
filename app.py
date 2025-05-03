@@ -28,6 +28,7 @@ def initialize_example_db():
     alice = graph_db.create_node(["Person"], {"name": "Alice", "age": 30})
     bob = graph_db.create_node(["Person"], {"name": "Bob", "age": 40})
     charlie = graph_db.create_node(["Person"], {"name": "Charlie", "age": 25})
+    dave = graph_db.create_node(["Person"], {"name": "Dave", "age": 35})
     matrix = graph_db.create_node(["Movie"], {"title": "The Matrix", "year": 1999})
     inception = graph_db.create_node(["Movie"], {"title": "Inception", "year": 2010})
     

@@ -33,9 +33,13 @@ class SimpleCypherParser:
         # Start an auto-transaction if none is active
         auto_transaction = False
         if not self.active_transaction:
+            # Only start auto-transaction if not inside a BEGIN/COMMIT block
+            logging.debug("Starting automatic transaction")
             self.transaction.begin()
             self.active_transaction = True
             auto_transaction = True
+        else:
+            logging.debug("Continuing existing transaction")
         
         try:
             # Execute the query based on its type
@@ -208,25 +212,7 @@ class SimpleCypherParser:
             for node in self.db.nodes.values():
                 logging.debug(f"Node: {node.id}, labels: {node.labels}, properties: {node.properties}")
             
-            # Find Alice and Dave nodes directly
-            alice_node = None
-            dave_node = None
-            
-            for node in self.db.nodes.values():
-                if 'name' in node.properties:
-                    name = node.properties['name']
-                    if name == 'Alice':
-                        alice_node = node
-                    elif name == 'Dave':
-                        dave_node = node
-            
-            if alice_node and dave_node:
-                logging.debug(f"Found Alice node: {alice_node.id}")
-                logging.debug(f"Found Dave node: {dave_node.id}")
-                rel = self.db.create_relationship(alice_node, dave_node, rel_type, rel_props)
-                created_rels = [rel]
-                logging.debug(f"Created relationship DIRECTLY: {alice_node.properties} -[{rel_type}]-> {dave_node.properties}")
-                return [{"success": f"Created relationship directly"}]
+            # Direct node lookup approach was too specific, removing it in favor of the generic approach
             
             # If direct lookup failed, try the standard method
             # Find matching source and target nodes
