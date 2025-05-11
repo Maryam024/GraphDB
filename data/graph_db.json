@@ -69,6 +69,25 @@
         "name": "Dave",
         "age": 35
       }
+    },
+    {
+      "id": "7d228660-c3f1-4603-ab67-b3af365e7a48",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Emma",
+        "age": 33
+      }
+    },
+    {
+      "id": "d5bf03a9-e0cf-4c43-8ae0-00f30eca34e6",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Emma"
+      }
     }
   ],
   "relationships": [
