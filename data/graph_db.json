@@ -88,6 +88,16 @@
       "properties": {
         "name": "Emma"
       }
+    },
+    {
+      "id": "efc01856-fe97-485e-91cc-98f1eb45aff5",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Frank",
+        "age": 40
+      }
     }
   ],
   "relationships": [
