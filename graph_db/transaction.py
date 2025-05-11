@@ -284,6 +284,8 @@ class Transaction:
                 # Only save to db.json on explicit COMMIT operations
                 # This ensures changes are not persisted during auto-transactions
                 data = self.db.serialize()
+                
+                # Save to root db.json
                 # First write to a temporary file
                 temp_file = 'db.json.tmp'
                 with open(temp_file, 'w') as f:
@@ -292,7 +294,19 @@ class Transaction:
                 # Then atomically rename to ensure durability even if system crashes
                 os.replace(temp_file, 'db.json')
                 
-            logging.debug("Database state saved to disk")
+                # Also save to data directory for consistency with UI operations
+                data_dir = 'data'
+                os.makedirs(data_dir, exist_ok=True)
+                data_temp_file = os.path.join(data_dir, 'graph_db.json.tmp')
+                data_file = os.path.join(data_dir, 'graph_db.json')
+                
+                with open(data_temp_file, 'w') as f:
+                    json.dump(data, f, indent=2)
+                
+                # Then atomically rename to ensure durability
+                os.replace(data_temp_file, data_file)
+                
+            logging.debug("Database state saved to disk (both root and data directory)")
             return True
         except Exception as e:
             logging.error(f"Error saving database to disk: {str(e)}")
@@ -306,7 +320,12 @@ class Transaction:
                 # First check if a temp file exists - might indicate an incomplete write
                 temp_file = 'db.json.tmp'
                 db_file = 'db.json'
+                data_dir = 'data'
+                data_temp_file = os.path.join(data_dir, 'graph_db.json.tmp')
+                data_file = os.path.join(data_dir, 'graph_db.json')
                 
+                # Check both root and data directory files
+                # Root directory recovery
                 if os.path.exists(temp_file) and os.path.exists(db_file):
                     # Both exist, check which is newer
                     temp_mtime = os.path.getmtime(temp_file)
@@ -334,17 +353,65 @@ class Transaction:
                     except Exception:
                         logging.error("Failed to recover database from temporary file")
                 
-                # Now try to load the main file
+                # Data directory recovery
+                if os.path.exists(data_dir):
+                    if os.path.exists(data_temp_file) and os.path.exists(data_file):
+                        # Both exist, check which is newer
+                        temp_mtime = os.path.getmtime(data_temp_file)
+                        data_mtime = os.path.getmtime(data_file)
+                        
+                        if temp_mtime > data_mtime:
+                            # Temp file is newer
+                            try:
+                                os.replace(data_temp_file, data_file)
+                                logging.info("Recovered from previous incomplete save in data directory")
+                            except Exception:
+                                logging.warning("Failed to recover from incomplete save in data directory")
+                        else:
+                            # Main file is newer, remove stale temp
+                            try:
+                                os.remove(data_temp_file)
+                            except Exception:
+                                pass
+                    elif os.path.exists(data_temp_file) and not os.path.exists(data_file):
+                        # Only temp exists
+                        try:
+                            os.rename(data_temp_file, data_file)
+                            logging.info("Recovered database from data directory temporary file")
+                        except Exception:
+                            logging.error("Failed to recover database from data directory temporary file")
+                
+                # Try to load the database
+                # First try root directory file
+                loaded = False
                 if os.path.exists(db_file):
                     try:
                         with open(db_file, 'r') as f:
                             data = json.load(f)
                         self.db.deserialize(data)
-                        logging.debug("Database state loaded from disk")
-                        return True
+                        logging.debug("Database state loaded from root directory file")
+                        loaded = True
                     except json.JSONDecodeError:
-                        logging.error("Corrupted database file found")
-                        return False
+                        logging.error("Corrupted database file found in root directory")
+                
+                # If root didn't work, try data directory
+                if not loaded and os.path.exists(data_dir) and os.path.exists(data_file):
+                    try:
+                        with open(data_file, 'r') as f:
+                            data = json.load(f)
+                        self.db.deserialize(data)
+                        logging.debug("Database state loaded from data directory file")
+                        
+                        # If we loaded from data directory, sync back to root
+                        with open(db_file, 'w') as f:
+                            json.dump(data, f, indent=2)
+                        
+                        loaded = True
+                    except json.JSONDecodeError:
+                        logging.error("Corrupted database file found in data directory")
+                
+                if loaded:
+                    return True
                 else:
                     logging.debug("No saved database state found")
                     return False

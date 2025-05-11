@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, jsonify, session
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(message)s')
 from graph_db.database import GraphDatabase
 from graph_db.simple_parser import SimpleCypherParser
+from graph_db.transaction import Transaction
 
 # Create Flask app
 app = Flask(__name__)
