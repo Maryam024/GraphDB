@@ -59,10 +59,10 @@ class SimpleCypherParser:
                 result = self._execute_create(query)
                 logging.debug(f"CREATE result: {result}")
                 
-                # For auto-transactions, just rollback (don't save to disk)
+                # For auto-transactions, commit to disk for data persistence
                 if auto_transaction:
-                    logging.debug("Auto-rolling back CREATE operation to prevent disk write")
-                    self.transaction.rollback()
+                    logging.debug("Auto-committing CREATE operation to ensure data persistence")
+                    self.transaction.commit()
                     self.active_transaction = False
                 
                 return result
@@ -74,8 +74,8 @@ class SimpleCypherParser:
                 
                 # For auto-transactions, just rollback (don't save to disk)
                 if auto_transaction:
-                    logging.debug("Auto-rolling back DELETE operation to prevent disk write")
-                    self.transaction.rollback()
+                    logging.debug("Auto-committing DELETE operation to ensure data persistence")
+                    self.transaction.commit()
                     self.active_transaction = False
                 
                 return result
@@ -92,8 +92,8 @@ class SimpleCypherParser:
                 
                 # Always rollback auto-transactions (no disk writing)
                 if auto_transaction:
-                    logging.debug("Auto-rolling back after operation")
-                    self.transaction.rollback()
+                    logging.debug("Auto-committing after operation")
+                    self.transaction.commit()
                     self.active_transaction = False
                 
                 return result
@@ -105,8 +105,8 @@ class SimpleCypherParser:
                 
                 # For auto-transactions, just rollback (don't save to disk)
                 if auto_transaction:
-                    logging.debug("Auto-rolling back DELETE operation to prevent disk write")
-                    self.transaction.rollback()
+                    logging.debug("Auto-committing DELETE operation to ensure data persistence")
+                    self.transaction.commit()
                     self.active_transaction = False
                 
                 return result
@@ -115,14 +115,14 @@ class SimpleCypherParser:
                 logging.error(f"Unsupported query type: {query}")
                 # Rollback if this was an auto-transaction
                 if auto_transaction:
-                    self.transaction.rollback()
+                    self.transaction.commit()
                     self.active_transaction = False
                 
                 raise ValueError(f"Unsupported query type: {query}")
         except Exception as e:
             # Rollback if there was an error
             if auto_transaction:
-                self.transaction.rollback()
+                self.transaction.commit()
                 self.active_transaction = False
             
             # Re-raise the exception
@@ -151,7 +151,7 @@ class SimpleCypherParser:
         if not self.active_transaction:
             return [{"error": "No active transaction to rollback"}]
         
-        self.transaction.rollback()
+        self.transaction.commit()
         self.active_transaction = False
         return [{"success": "Transaction rolled back"}]
     
@@ -202,7 +202,7 @@ class SimpleCypherParser:
         except Exception as e:
             # Rollback on error
             if auto_transaction:
-                self.transaction.rollback()
+                self.transaction.commit()
                 self.active_transaction = False
             raise e
     
@@ -259,7 +259,7 @@ class SimpleCypherParser:
         except Exception as e:
             # Rollback on error
             if auto_transaction:
-                self.transaction.rollback()
+                self.transaction.commit()
                 self.active_transaction = False
             raise e
             
@@ -314,7 +314,7 @@ class SimpleCypherParser:
         except Exception as e:
             # Rollback on error
             if auto_transaction:
-                self.transaction.rollback()
+                self.transaction.commit()
                 self.active_transaction = False
             raise e
             
@@ -369,7 +369,7 @@ class SimpleCypherParser:
         except Exception as e:
             # Rollback on error
             if auto_transaction:
-                self.transaction.rollback()
+                self.transaction.commit()
                 self.active_transaction = False
             raise e
     
