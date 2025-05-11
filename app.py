@@ -61,9 +61,28 @@ def initialize_example_db():
     # Test query to verify FRIENDS relationship works
     result = parser.execute("MATCH (p:Person)-[r:FRIEND]->(friend) RETURN p.name, friend.name, r.since")
     logging.debug(f"FRIEND relationship test: {result}")
+    
+    # Save initial database state to db.json
+    try:
+        db_state = graph_db.serialize()
+        with open('db.json', 'w') as f:
+            json.dump(db_state, f, indent=2)
+        logging.info("Initial database state saved to db.json")
+    except Exception as e:
+        logging.error(f"Error saving initial database state: {str(e)}")
 
-# Initialize example database
-initialize_example_db()
+# Try to load existing database from db.json, or initialize example database if not found
+try:
+    # Create a transaction for loading
+    tx = Transaction(graph_db)
+    if tx.load_database_from_disk():
+        logging.info("Loaded existing database from db.json")
+    else:
+        logging.info("No existing database found, initializing example database")
+        initialize_example_db()
+except Exception as e:
+    logging.error(f"Error loading database, initializing example database: {str(e)}")
+    initialize_example_db()
 
 @app.route('/')
 def index():
