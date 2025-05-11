@@ -203,7 +203,12 @@
     }
   ],
   "constraints": {
-    "unique": []
+    "unique": [
+      [
+        "Movie",
+        "name"
+      ]
+    ]
   },
   "indexes": []
 }

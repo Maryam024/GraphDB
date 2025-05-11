@@ -65,20 +65,33 @@ def evaluate_condition(row, condition):
             left_value = node.properties.get(prop_name)
             
             # Compare values based on operator
-            if operator_str == '=':
-                return left_value == value
-            elif operator_str == '>':
-                return left_value > value
-            elif operator_str == '>=':
-                return left_value >= value
-            elif operator_str == '<':
-                return left_value < value
-            elif operator_str == '<=':
-                return left_value <= value
-            elif operator_str == '<>':
-                return left_value != value
-            elif operator_str == '!=':
-                return left_value != value
+            # Handle None values for all comparison operators
+            if left_value is None:
+                # None values fail all numeric comparisons except != and <>
+                if operator_str == '=':
+                    return value is None
+                elif operator_str == '>' or operator_str == '>=' or operator_str == '<' or operator_str == '<=':
+                    return False
+                elif operator_str == '<>':
+                    return value is not None
+                elif operator_str == '!=':
+                    return value is not None
+            else:
+                # Normal comparison for non-None values
+                if operator_str == '=':
+                    return left_value == value
+                elif operator_str == '>':
+                    return left_value > value
+                elif operator_str == '>=':
+                    return left_value >= value
+                elif operator_str == '<':
+                    return left_value < value
+                elif operator_str == '<=':
+                    return left_value <= value
+                elif operator_str == '<>':
+                    return left_value != value
+                elif operator_str == '!=':
+                    return left_value != value
     
     # Handle EXISTS
     exists_match = re.match(r"EXISTS\((\w+)\.(\w+)\)", condition)
