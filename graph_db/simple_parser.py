@@ -42,16 +42,29 @@ class SimpleCypherParser:
         elif query_upper.startswith("DROP INDEX"):
             return self._execute_drop_index(query)
         
-        # Start an auto-transaction if none is active
+        # Determine if this is a read-only or modification query
+        is_modification = query_upper.startswith(("CREATE ", "SET ", "DELETE ", "REMOVE "))
+        is_read_only = query_upper.startswith("MATCH ") and not query_upper.startswith("MATCH") and "DELETE" not in query_upper
+        
+        # Handle transaction decision logic
         auto_transaction = False
         if not self.active_transaction:
-            # Only start auto-transaction if not inside a BEGIN/COMMIT block
-            logging.debug("Starting automatic transaction")
-            self.transaction.begin()
-            self.active_transaction = True
-            auto_transaction = True
+            if is_modification:
+                # Auto-transactions only for single operations outside explicit BEGIN/COMMIT blocks
+                logging.debug("Starting auto-transaction for modification operation")
+                self.transaction.begin()
+                self.active_transaction = True
+                auto_transaction = True
+                # Flag this as an auto-transaction in the log for differentiation
+                self.transaction.log_operation("AUTO_TRANSACTION", {"query_type": query_upper.split()[0]})
+            elif is_read_only:
+                # Read-only queries don't need a transaction but we set a temporary one for consistency
+                logging.debug("Starting read-only temporary transaction")
+                self.transaction.begin()
+                self.active_transaction = True
+                auto_transaction = True
         else:
-            logging.debug("Continuing existing transaction")
+            logging.debug("Continuing existing explicit transaction")
         
         try:
             # Execute the query based on its type
@@ -59,15 +72,22 @@ class SimpleCypherParser:
                 result = self._execute_create(query)
                 logging.debug(f"CREATE result: {result}")
                 
-                # For auto-transactions, only commit to disk if explicitly requested
+                # For auto-transactions, check if this is a standalone operation or part of a transaction
                 if auto_transaction:
-                    if len(self.transaction.log) == 1:  # This is the only operation in the transaction
-                        # This is a one-off operation outside a transaction block
+                    # Check if this was an explicit transaction (no AUTO_TRANSACTION flag) or an auto one
+                    has_auto_flag = False
+                    for op in self.transaction.log:
+                        if op.get("operation") == "AUTO_TRANSACTION":
+                            has_auto_flag = True
+                            break
+                            
+                    if has_auto_flag:
+                        # This is a one-off automatic operation outside an explicit transaction block
                         logging.debug("Auto-committing CREATE operation to ensure data persistence")
-                        self.transaction.commit()
+                        self.transaction.commit() 
                         self.active_transaction = False
                     else:
-                        # Inside an explicit transaction block, don't auto-commit
+                        # Inside an explicit transaction block (after BEGIN), don't auto-commit
                         logging.debug("Not auto-committing inside explicit transaction block")
                 
                 return result
@@ -95,11 +115,23 @@ class SimpleCypherParser:
                     result = self._execute_match(query)
                     logging.debug(f"MATCH result: {result}")
                 
-                # Always rollback auto-transactions (no disk writing)
+                # For auto-transactions, check if this is a standalone operation or part of an explicit transaction
                 if auto_transaction:
-                    logging.debug("Auto-committing after operation")
-                    self.transaction.commit()
-                    self.active_transaction = False
+                    # Check if this was an explicit transaction (has auto flag) or not
+                    has_auto_flag = False
+                    for op in self.transaction.log:
+                        if op.get("operation") == "AUTO_TRANSACTION":
+                            has_auto_flag = True
+                            break
+                            
+                    if has_auto_flag:
+                        # This is a one-off operation outside a transaction block
+                        logging.debug("Auto-committing read-only operation")
+                        self.transaction.commit()
+                        self.active_transaction = False
+                    else:
+                        # Inside an explicit transaction block, don't auto-commit
+                        logging.debug("Not auto-committing inside explicit transaction block")
                 
                 return result
                 
