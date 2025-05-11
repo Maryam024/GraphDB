@@ -98,6 +98,25 @@
         "name": "Frank",
         "age": 40
       }
+    },
+    {
+      "id": "fbf48ebf-dc2c-4fe8-838d-d6fae7ec7239",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Grace",
+        "age": 28
+      }
+    },
+    {
+      "id": "d33c0a4b-4309-40e8-9b0b-2d60d36c36b7",
+      "labels": [
+        "Movie"
+      ],
+      "properties": {
+        "title": "The Matrix 4"
+      }
     }
   ],
   "relationships": [
@@ -162,6 +181,24 @@
       "type": "FRIEND",
       "properties": {
         "since": 2010
+      }
+    },
+    {
+      "id": "e1cb4164-cbdf-4bcd-8797-df221bdc59ae",
+      "source_id": "fbf48ebf-dc2c-4fe8-838d-d6fae7ec7239",
+      "target_id": "d33c0a4b-4309-40e8-9b0b-2d60d36c36b7",
+      "type": "LIKES",
+      "properties": {
+        "since": 2024
+      }
+    },
+    {
+      "id": "9de0a592-3686-4f5a-b53e-a71d2211392e",
+      "source_id": "a9a13a12-f6f7-48f0-ac70-7ff57daf4a74",
+      "target_id": "d33c0a4b-4309-40e8-9b0b-2d60d36c36b7",
+      "type": "WATCHED",
+      "properties": {
+        "rating": 5
       }
     }
   ],

@@ -375,6 +375,92 @@ class SimpleCypherParser:
     
     def _execute_create(self, query):
         """Execute a CREATE query"""
+        # Handle direct node-relationship-node creation: CREATE (a:Label)-[:TYPE]->(b:Label)
+        direct_rel_pattern = r"CREATE\s+\(([^)]*)\)-\[(?:[^:]*):(\w+)(?:\s*{([^}]*)}?)?\]->\(([^)]*)\)"
+        direct_rel_match = re.search(direct_rel_pattern, query, re.IGNORECASE | re.DOTALL)
+        
+        if direct_rel_match and not "MATCH" in query.upper():
+            # Extract the pattern components
+            from_node_str = direct_rel_match.group(1)
+            rel_type = direct_rel_match.group(2)
+            rel_props_str = direct_rel_match.group(3) or ""
+            to_node_str = direct_rel_match.group(4)
+            
+            logging.debug(f"Direct relationship creation: {from_node_str} -[:{rel_type}]-> {to_node_str}")
+            
+            # Parse source node labels and properties
+            from_labels = []
+            from_label_pattern = r":(\w+)"
+            from_label_matches = re.findall(from_label_pattern, from_node_str)
+            from_labels.extend(from_label_matches)
+            
+            from_properties = {}
+            from_prop_pattern = r"{([^}]*)}"
+            from_prop_matches = re.findall(from_prop_pattern, from_node_str)
+            
+            if from_prop_matches:
+                from_prop_str = from_prop_matches[0]
+                from_prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", from_prop_str)
+                for key, value in from_prop_items:
+                    from_properties[key] = self._parse_value(value.strip())
+            
+            # Parse target node labels and properties
+            to_labels = []
+            to_label_pattern = r":(\w+)"
+            to_label_matches = re.findall(to_label_pattern, to_node_str)
+            to_labels.extend(to_label_matches)
+            
+            to_properties = {}
+            to_prop_pattern = r"{([^}]*)}"
+            to_prop_matches = re.findall(to_prop_pattern, to_node_str)
+            
+            if to_prop_matches:
+                to_prop_str = to_prop_matches[0]
+                to_prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", to_prop_str)
+                for key, value in to_prop_items:
+                    to_properties[key] = self._parse_value(value.strip())
+            
+            # Parse relationship properties
+            rel_props = {}
+            if rel_props_str:
+                rel_prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", rel_props_str)
+                for key, value in rel_prop_items:
+                    rel_props[key] = self._parse_value(value.strip())
+            
+            # Create the source and target nodes
+            source_node = self.db.create_node(labels=from_labels, properties=from_properties)
+            target_node = self.db.create_node(labels=to_labels, properties=to_properties)
+            
+            # Log node operations if in transaction
+            if self.active_transaction:
+                self.transaction.log_operation("CREATE_NODE", {
+                    "node_id": source_node.id,
+                    "labels": list(from_labels),
+                    "properties": from_properties
+                })
+                
+                self.transaction.log_operation("CREATE_NODE", {
+                    "node_id": target_node.id,
+                    "labels": list(to_labels),
+                    "properties": to_properties
+                })
+            
+            # Create the relationship
+            relationship = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
+            
+            # Log relationship operation if in transaction
+            if self.active_transaction:
+                self.transaction.log_operation("CREATE_RELATIONSHIP", {
+                    "relationship_id": relationship.id,
+                    "source_id": source_node.id,
+                    "target_id": target_node.id,
+                    "type": rel_type,
+                    "properties": rel_props
+                })
+            
+            logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
+            return {"created": 1}
+            
         # Handle node creation: CREATE (:Label {prop: value})
         node_pattern = r"CREATE\s+\(([^)]*)\)"
         node_matches = re.findall(node_pattern, query, re.IGNORECASE)
@@ -424,7 +510,7 @@ class SimpleCypherParser:
             create_part = rel_match.group(2)
             
             # Parse the CREATE part to extract relationship details
-            create_rel_pattern = r"\((\w+)\)-\[:([\w]+)(\s*{([^}]*)}?)?\]->\((\w+)\)"
+            create_rel_pattern = r"\((\w+)\)-\[(?:\w+)?:([\w]+)(\s*{([^}]*)}?)?\]->\((\w+)\)"
             create_rel_match = re.search(create_rel_pattern, create_part)
             
             if not create_rel_match:
