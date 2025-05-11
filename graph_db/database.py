@@ -416,6 +416,10 @@ class GraphDatabase:
         stats = []
         
         for index_key in self.indexed_properties:
+            # Make sure index_key is hashable (convert to tuple if it's a list)
+            if isinstance(index_key, list):
+                index_key = tuple(index_key)
+            
             label, prop = index_key
             
             # Skip if this index has no stats yet

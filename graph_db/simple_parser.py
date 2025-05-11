@@ -61,7 +61,7 @@ class SimpleCypherParser:
                 
                 # For auto-transactions, only commit to disk if explicitly requested
                 if auto_transaction:
-                    if "BEGIN" not in self.transaction.operations:
+                    if len(self.transaction.log) == 1:  # This is the only operation in the transaction
                         # This is a one-off operation outside a transaction block
                         logging.debug("Auto-committing CREATE operation to ensure data persistence")
                         self.transaction.commit()
