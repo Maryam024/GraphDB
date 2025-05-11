@@ -117,6 +117,26 @@
       "properties": {
         "title": "The Matrix 4"
       }
+    },
+    {
+      "id": "b569e7e1-7ff6-4b45-aac4-f1c65a7ad486",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Areeba",
+        "age": 35
+      }
+    },
+    {
+      "id": "cc78ac8e-a633-4fb4-bbcc-50d2bf3fba58",
+      "labels": [
+        "Person"
+      ],
+      "properties": {
+        "name": "Far",
+        "age": 35
+      }
     }
   ],
   "relationships": [
@@ -210,5 +230,10 @@
       ]
     ]
   },
-  "indexes": []
+  "indexes": [
+    [
+      "Person",
+      "name"
+    ]
+  ]
 }

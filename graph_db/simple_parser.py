@@ -59,11 +59,16 @@ class SimpleCypherParser:
                 result = self._execute_create(query)
                 logging.debug(f"CREATE result: {result}")
                 
-                # For auto-transactions, commit to disk for data persistence
+                # For auto-transactions, only commit to disk if explicitly requested
                 if auto_transaction:
-                    logging.debug("Auto-committing CREATE operation to ensure data persistence")
-                    self.transaction.commit()
-                    self.active_transaction = False
+                    if "BEGIN" not in self.transaction.operations:
+                        # This is a one-off operation outside a transaction block
+                        logging.debug("Auto-committing CREATE operation to ensure data persistence")
+                        self.transaction.commit()
+                        self.active_transaction = False
+                    else:
+                        # Inside an explicit transaction block, don't auto-commit
+                        logging.debug("Not auto-committing inside explicit transaction block")
                 
                 return result
                 
