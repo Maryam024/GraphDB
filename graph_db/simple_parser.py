@@ -2,8 +2,9 @@ import re
 import logging
 import uuid
 from .database import Node, Relationship
-from .transaction import Transaction
+from .transaction import Transaction, TransactionError
 from .cypher import evaluate_condition
+import ast
 
 class SimpleCypherParser:
     def __init__(self, database):
@@ -11,407 +12,185 @@ class SimpleCypherParser:
         self.transaction = Transaction(database)
         self.active_transaction = False
     
-    def execute(self, query):
-        """Parse and execute a Cypher-like query"""
+    def execute(self, query): 
         query = query.strip()
         logging.debug(f"Executing query: {query}")
         
-        # Check for empty query
         if not query:
             raise ValueError("Empty query")
         
-        # Identify query type
         query_upper = query.upper()
         
-        # Handle transaction commands
+        # Transaction commands must be standalone
         if query_upper.startswith("BEGIN"):
+            if self.active_transaction:
+                raise TransactionError("Transaction already in progress")
             return self._begin_transaction()
         elif query_upper.startswith("COMMIT"):
+            if not self.active_transaction:
+                raise TransactionError("No active transaction to commit")
             return self._commit_transaction()
         elif query_upper.startswith("ROLLBACK"):
+            if not self.active_transaction:
+                raise TransactionError("No active transaction to rollback")
             return self._rollback_transaction()
         
-        # Handle constraint commands
-        elif query_upper.startswith("CREATE CONSTRAINT"):
-            return self._execute_create_constraint(query)
-        elif query_upper.startswith("DROP CONSTRAINT"):
-            return self._execute_drop_constraint(query)
-        # Handle index commands
-        elif query_upper.startswith("CREATE INDEX"):
-            return self._execute_create_index(query)
-        elif query_upper.startswith("DROP INDEX"):
-            return self._execute_drop_index(query)
-        
-        # Determine if this is a read-only or modification query
-        is_modification = query_upper.startswith(("CREATE ", "SET ", "DELETE ", "REMOVE "))
-        is_read_only = query_upper.startswith("MATCH ") and not query_upper.startswith("MATCH") and "DELETE" not in query_upper
-        
-        # Handle transaction decision logic
-        auto_transaction = False
+        # All other operations require an active transaction
         if not self.active_transaction:
-            if is_modification:
-                # Auto-transactions only for single operations outside explicit BEGIN/COMMIT blocks
-                logging.debug("Starting auto-transaction for modification operation")
-                self.transaction.begin()
-                self.active_transaction = True
-                auto_transaction = True
-                # Flag this as an auto-transaction in the log for differentiation
-                self.transaction.log_operation("AUTO_TRANSACTION", {"query_type": query_upper.split()[0]})
-            elif is_read_only:
-                # Read-only queries don't need a transaction but we set a temporary one for consistency
-                logging.debug("Starting read-only temporary transaction")
-                self.transaction.begin()
-                self.active_transaction = True
-                auto_transaction = True
-        else:
-            logging.debug("Continuing existing explicit transaction")
+            raise TransactionError("No active transaction. Use BEGIN to start a transaction")
         
         try:
-            # Execute the query based on its type
-            if query_upper.startswith("CREATE "):
-                result = self._execute_create(query)
-                logging.debug(f"CREATE result: {result}")
-                
-                # For auto-transactions, check if this is a standalone operation or part of a transaction
-                if auto_transaction:
-                    # Check if this was an explicit transaction (no AUTO_TRANSACTION flag) or an auto one
-                    has_auto_flag = False
-                    for op in self.transaction.log:
-                        if op.get("operation") == "AUTO_TRANSACTION":
-                            has_auto_flag = True
-                            break
-                            
-                    if has_auto_flag:
-                        # This is a one-off automatic operation outside an explicit transaction block
-                        logging.debug("Auto-committing CREATE operation to ensure data persistence")
-                        self.transaction.commit() 
-                        self.active_transaction = False
-                    else:
-                        # Inside an explicit transaction block (after BEGIN), don't auto-commit
-                        logging.debug("Not auto-committing inside explicit transaction block")
-                
-                return result
-                
-            # MATCH with DELETE (needs to be before general MATCH)
+            # Schema operations
+            if query_upper.startswith("CREATE CONSTRAINT"):
+                return self._execute_create_constraint(query)
+            elif query_upper.startswith("DROP CONSTRAINT"):
+                return self._execute_drop_constraint(query)
+            elif query_upper.startswith("CREATE INDEX"):
+                return self._execute_create_index(query)
+            elif query_upper.startswith("DROP INDEX"):
+                return self._execute_drop_index(query)
+            
+            # Data operations
+            elif query_upper.startswith("CREATE "):
+                return self._execute_create(query)
             elif "DELETE " in query_upper and "MATCH " in query_upper:
-                result = self._execute_delete(query)
-                logging.debug(f"MATCH-DELETE result: {result}")
-                
-                # For auto-transactions, just rollback (don't save to disk)
-                if auto_transaction:
-                    logging.debug("Auto-committing DELETE operation to ensure data persistence")
-                    self.transaction.commit()
-                    self.active_transaction = False
-                
-                return result
-                
-            # MATCH with general query
+                return self._execute_delete(query)
             elif query_upper.startswith("MATCH "):
-                # Check for MATCH/CREATE pattern first
                 if "CREATE" in query_upper:
-                    result = self._execute_create(query)
-                    logging.debug(f"MATCH/CREATE result: {result}")
+                    return self._execute_create(query)
                 else:
-                    result = self._execute_match(query)
-                    logging.debug(f"MATCH result: {result}")
-                
-                # For auto-transactions, check if this is a standalone operation or part of an explicit transaction
-                if auto_transaction:
-                    # Check if this was an explicit transaction (has auto flag) or not
-                    has_auto_flag = False
-                    for op in self.transaction.log:
-                        if op.get("operation") == "AUTO_TRANSACTION":
-                            has_auto_flag = True
-                            break
-                            
-                    if has_auto_flag:
-                        # This is a one-off operation outside a transaction block
-                        logging.debug("Auto-committing read-only operation")
-                        self.transaction.commit()
-                        self.active_transaction = False
-                    else:
-                        # Inside an explicit transaction block, don't auto-commit
-                        logging.debug("Not auto-committing inside explicit transaction block")
-                
-                return result
-                
-            # Simple DELETE
+                    return self._execute_match(query)
             elif query_upper.startswith("DELETE "):
-                result = self._execute_delete(query)
-                logging.debug(f"DELETE result: {result}")
-                
-                # For auto-transactions, just rollback (don't save to disk)
-                if auto_transaction:
-                    logging.debug("Auto-committing DELETE operation to ensure data persistence")
-                    self.transaction.commit()
-                    self.active_transaction = False
-                
-                return result
-                
+                return self._execute_delete(query)
             else:
-                logging.error(f"Unsupported query type: {query}")
-                # Rollback if this was an auto-transaction
-                if auto_transaction:
-                    self.transaction.commit()
-                    self.active_transaction = False
-                
                 raise ValueError(f"Unsupported query type: {query}")
         except Exception as e:
-            # Rollback if there was an error
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            
-            # Re-raise the exception
+            # On error, rollback the transaction
+            self._rollback_transaction()
             raise e
-    
+
     def _begin_transaction(self):
         """Begin a new transaction"""
-        if self.active_transaction:
-            return [{"error": "Transaction already in progress"}]
-        
         self.transaction.begin()
         self.active_transaction = True
         return [{"success": "Transaction started"}]
     
     def _commit_transaction(self):
         """Commit the current transaction"""
-        if not self.active_transaction:
-            return [{"error": "No active transaction to commit"}]
-        
-        self.transaction.commit()
+        result = self.transaction.commit()
         self.active_transaction = False
         return [{"success": "Transaction committed"}]
     
     def _rollback_transaction(self):
         """Rollback the current transaction"""
-        if not self.active_transaction:
-            return [{"error": "No active transaction to rollback"}]
-        
-        self.transaction.commit()
+        result = self.transaction.rollback()
         self.active_transaction = False
         return [{"success": "Transaction rolled back"}]
     
     def _execute_create_constraint(self, query):
-        """Execute a CREATE CONSTRAINT query
-        
-        Syntax: CREATE CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE
-        """
-        # Parse the CREATE CONSTRAINT statement
+        """Execute a CREATE CONSTRAINT query"""
         constraint_pattern = r"CREATE\s+CONSTRAINT\s+ON\s+\((\w+):(\w+)\)\s+ASSERT\s+\1\.(\w+)\s+IS\s+UNIQUE"
         constraint_match = re.search(constraint_pattern, query, re.IGNORECASE)
         
         if not constraint_match:
             raise ValueError("Invalid constraint syntax. Expected: CREATE CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE")
         
-        # Extract label and property
-        var_name = constraint_match.group(1)  # Not used, just for syntax validation
         label = constraint_match.group(2)
         property_name = constraint_match.group(3)
         
-        # Start an auto-transaction for this operation
-        auto_transaction = False
-        if not self.active_transaction:
-            self.transaction.begin()
-            self.active_transaction = True
-            auto_transaction = True
-        
         try:
-            # Log the operation but don't add the constraint directly
-            # Let the transaction system handle it during commit
-            logging.debug(f"Preparing unique constraint on {label}.{property_name}")
-            
-            # Log the operation - this will be applied during commit
-            if self.active_transaction:
-                self.transaction.log_operation("CREATE_CONSTRAINT", {
-                    "label": label,
-                    "property": property_name,
-                    "type": "UNIQUE"
-                })
-            
-            # Commit if this was an auto-transaction (constraints modify schema)
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
+            self.transaction.log_operation("CREATE_CONSTRAINT", {
+                "label": label,
+                "property": property_name,
+                "type": "UNIQUE"
+            })
             
             return [{"success": f"Added unique constraint on {label}.{property_name}"}]
-            
         except Exception as e:
-            # Rollback on error
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            raise e
-    
+            raise TransactionError(f"Failed to create constraint: {str(e)}")
+
     def _execute_drop_constraint(self, query):
-        """Execute a DROP CONSTRAINT query
-        
-        Syntax: DROP CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE
-        """
-        # Parse the DROP CONSTRAINT statement
+        """Execute a DROP CONSTRAINT query"""
         constraint_pattern = r"DROP\s+CONSTRAINT\s+ON\s+\((\w+):(\w+)\)\s+ASSERT\s+\1\.(\w+)\s+IS\s+UNIQUE"
         constraint_match = re.search(constraint_pattern, query, re.IGNORECASE)
         
         if not constraint_match:
             raise ValueError("Invalid constraint syntax. Expected: DROP CONSTRAINT ON (n:Label) ASSERT n.property IS UNIQUE")
         
-        # Extract label and property
-        var_name = constraint_match.group(1)  # Not used, just for syntax validation
         label = constraint_match.group(2)
         property_name = constraint_match.group(3)
         
-        # Start an auto-transaction for this operation
-        auto_transaction = False
-        if not self.active_transaction:
-            self.transaction.begin()
-            self.active_transaction = True
-            auto_transaction = True
-        
         try:
-            # Log the operation but don't drop the constraint directly
-            # Let the transaction system handle it during commit
-            logging.debug(f"Preparing drop of unique constraint on {label}.{property_name}")
+            # Check if constraint exists
+            exists = (label, property_name) in self.db.constraints.get('unique', [])
             
-            # Check if constraint exists before attempting to drop
-            result = (label, property_name) in self.db.constraints.get('unique', [])
+            self.transaction.log_operation("DROP_CONSTRAINT", {
+                "label": label,
+                "property": property_name,
+                "type": "UNIQUE"
+            })
             
-            # Log the operation - this will be applied during commit
-            if self.active_transaction:
-                self.transaction.log_operation("DROP_CONSTRAINT", {
-                    "label": label,
-                    "property": property_name,
-                    "type": "UNIQUE"
-                })
-            
-            # Commit if this was an auto-transaction (constraints modify schema)
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            
-            if result:
+            if exists:
                 return [{"success": f"Dropped unique constraint on {label}.{property_name}"}]
             else:
                 return [{"message": f"No constraint found on {label}.{property_name}"}]
-            
         except Exception as e:
-            # Rollback on error
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            raise e
-            
+            raise TransactionError(f"Failed to drop constraint: {str(e)}")
+
     def _execute_create_index(self, query):
-        """Execute a CREATE INDEX query
-        
-        Syntax: CREATE INDEX ON :Label(property)
-        """
-        # Parse the CREATE INDEX statement
+        """Execute a CREATE INDEX query"""
         index_pattern = r"CREATE\s+INDEX\s+ON\s+:(\w+)\((\w+)\)"
         index_match = re.search(index_pattern, query, re.IGNORECASE)
         
         if not index_match:
             raise ValueError("Invalid index syntax. Expected: CREATE INDEX ON :Label(property)")
         
-        # Extract label and property
         label = index_match.group(1)
         property_name = index_match.group(2)
         
-        # Start an auto-transaction for this operation
-        auto_transaction = False
-        if not self.active_transaction:
-            self.transaction.begin()
-            self.active_transaction = True
-            auto_transaction = True
-        
         try:
-            # Log the operation but don't create the index directly
-            # Let the transaction system handle it during commit
-            logging.debug(f"Preparing creation of index on {label}.{property_name}")
+            exists = (label, property_name) in self.db.indexed_properties
             
-            # Check if index already exists
-            result = (label, property_name) not in self.db.indexed_properties
+            self.transaction.log_operation("CREATE_INDEX", {
+                "label": label,
+                "property": property_name
+            })
             
-            # Log the operation - this will be applied during commit
-            if self.active_transaction:
-                self.transaction.log_operation("CREATE_INDEX", {
-                    "label": label,
-                    "property": property_name
-                })
-            
-            # Commit if this was an auto-transaction (indexes modify schema)
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            
-            if result:
-                return [{"success": f"Created index on {label}.{property_name}"}]
-            else:
+            if exists:
                 return [{"message": f"Index on {label}.{property_name} already exists"}]
-            
+            else:
+                return [{"success": f"Created index on {label}.{property_name}"}]
         except Exception as e:
-            # Rollback on error
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            raise e
-            
+            raise TransactionError(f"Failed to create index: {str(e)}")
+
     def _execute_drop_index(self, query):
-        """Execute a DROP INDEX query
-        
-        Syntax: DROP INDEX ON :Label(property)
-        """
-        # Parse the DROP INDEX statement
+        """Execute a DROP INDEX query"""
         index_pattern = r"DROP\s+INDEX\s+ON\s+:(\w+)\((\w+)\)"
         index_match = re.search(index_pattern, query, re.IGNORECASE)
         
         if not index_match:
             raise ValueError("Invalid index syntax. Expected: DROP INDEX ON :Label(property)")
         
-        # Extract label and property
         label = index_match.group(1)
         property_name = index_match.group(2)
         
-        # Start an auto-transaction for this operation
-        auto_transaction = False
-        if not self.active_transaction:
-            self.transaction.begin()
-            self.active_transaction = True
-            auto_transaction = True
-        
         try:
-            # Log the operation but don't drop the index directly
-            # Let the transaction system handle it during commit
-            logging.debug(f"Preparing drop of index on {label}.{property_name}")
+            exists = (label, property_name) in self.db.indexed_properties
             
-            # Check if index exists before attempting to drop
-            result = (label, property_name) in self.db.indexed_properties
+            self.transaction.log_operation("DROP_INDEX", {
+                "label": label,
+                "property": property_name
+            })
             
-            # Log the operation - this will be applied during commit
-            if self.active_transaction:
-                self.transaction.log_operation("DROP_INDEX", {
-                    "label": label,
-                    "property": property_name
-                })
-            
-            # Commit if this was an auto-transaction (indexes modify schema)
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            
-            if result:
+            if exists:
                 return [{"success": f"Dropped index on {label}.{property_name}"}]
             else:
                 return [{"message": f"No index found on {label}.{property_name}"}]
-            
         except Exception as e:
-            # Rollback on error
-            if auto_transaction:
-                self.transaction.commit()
-                self.active_transaction = False
-            raise e
-    
+            raise TransactionError(f"Failed to drop index: {str(e)}")
+
     def _execute_create(self, query):
-        """Execute a CREATE query"""
+        """Execute a CREATE query within a transaction"""
         # Handle direct node-relationship-node creation: CREATE (a:Label)-[:TYPE]->(b:Label)
         direct_rel_pattern = r"CREATE\s+\(([^)]*)\)-\[(?:[^:]*):(\w+)(?:\s*{([^}]*)}?)?\]->\(([^)]*)\)"
         direct_rel_match = re.search(direct_rel_pattern, query, re.IGNORECASE | re.DOTALL)
@@ -464,38 +243,31 @@ class SimpleCypherParser:
                 for key, value in rel_prop_items:
                     rel_props[key] = self._parse_value(value.strip())
             
-            # Create the source and target nodes
-            source_node = self.db.create_node(labels=from_labels, properties=from_properties)
-            target_node = self.db.create_node(labels=to_labels, properties=to_properties)
+            source_id = str(uuid.uuid4())
+            target_id = str(uuid.uuid4())
             
-            # Log node operations if in transaction
-            if self.active_transaction:
-                self.transaction.log_operation("CREATE_NODE", {
-                    "node_id": source_node.id,
-                    "labels": list(from_labels),
-                    "properties": from_properties
-                })
-                
-                self.transaction.log_operation("CREATE_NODE", {
-                    "node_id": target_node.id,
-                    "labels": list(to_labels),
-                    "properties": to_properties
-                })
-            
-            # Create the relationship
-            relationship = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
-            
-            # Log relationship operation if in transaction
-            if self.active_transaction:
-                self.transaction.log_operation("CREATE_RELATIONSHIP", {
-                    "relationship_id": relationship.id,
-                    "source_id": source_node.id,
-                    "target_id": target_node.id,
-                    "type": rel_type,
-                    "properties": rel_props
-                })
-            
-            logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
+            self.transaction.log_operation("CREATE_NODE", {
+                "node_id": source_id,
+                "labels": list(from_labels),
+                "properties": from_properties
+            })
+
+            self.transaction.log_operation("CREATE_NODE", {
+                "node_id": target_id,
+                "labels": list(to_labels),
+                "properties": to_properties
+            })
+
+            self.transaction.log_operation("CREATE_RELATIONSHIP", {
+                "relationship_id": str(uuid.uuid4()),
+                "source_id": source_id,
+                "target_id": target_id,
+                "type": rel_type,
+                "properties": rel_props
+            })
+
+            logging.debug(f"Deferred creation of relationship: ({source_id})-[:{rel_type}]->({target_id})")
+
             return {"created": 1}
             
         # Handle node creation: CREATE (:Label {prop: value})
@@ -517,25 +289,20 @@ class SimpleCypherParser:
                 prop_matches = re.findall(prop_pattern, node_match)
                 
                 if prop_matches:
-                    # Process properties like name: 'value', age: 30
                     prop_str = prop_matches[0]
                     prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", prop_str)
-                    
                     for key, value in prop_items:
                         properties[key] = self._parse_value(value.strip())
                 
-                # Create the node
-                node = self.db.create_node(labels=labels, properties=properties)
-                created_nodes.append(node)
+                # Generate ID and log operation
+                node_id = str(uuid.uuid4())
+                self.transaction.log_operation("CREATE_NODE", {
+                    "node_id": node_id,
+                    "labels": list(labels),
+                    "properties": properties
+                })
+                created_nodes.append(node_id)
                 
-                # Log operation if in transaction
-                if self.active_transaction:
-                    self.transaction.log_operation("CREATE_NODE", {
-                        "node_id": node.id,
-                        "labels": list(labels),
-                        "properties": properties
-                    })
-            
             return {"created": len(created_nodes)}
         
         # Handle relationship creation: MATCH (a), (b) CREATE (a)-[:TYPE {props}]->(b)
@@ -565,130 +332,41 @@ class SimpleCypherParser:
                 for key, value in prop_items:
                     rel_props[key] = self._parse_value(value.strip())
             
-            # Debug - print all nodes in the database
-            logging.debug("All nodes in database:")
-            for node in self.db.nodes.values():
-                logging.debug(f"Node: {node.id}, labels: {node.labels}, properties: {node.properties}")
-                
-            # Try direct lookup first for better matching (matches by exact name properties)
-            src_nodes = []
-            dst_nodes = []
+            # Find source and target nodes
+            variable_nodes = self._find_nodes_for_match(match_part)
             
-            # Parse node patterns from match_part to extract expected properties
-            node_pattern = r"\((\w+)(?::(\w+))?(?:\s*{([^}]*)})??\)"
-            node_matches = re.finditer(node_pattern, match_part)
+            if from_var not in variable_nodes or to_var not in variable_nodes:
+                return [{"message": "No matching nodes found for relationship creation"}]
             
-            # Dict to store variables and their expected properties
-            node_vars = {}
-            for node_match in node_matches:
-                var_name = node_match.group(1)
-                node_type = node_match.group(2) or ""
-                props_str = node_match.group(3) or ""
-                
-                # Extract properties
-                props = {}
-                if props_str:
-                    prop_items = re.findall(r"(\w+)\s*:\s*([^,]+)", props_str)
-                    for key, value in prop_items:
-                        props[key] = self._parse_value(value.strip())
-                
-                node_vars[var_name] = {
-                    'type': node_type, 
-                    'props': props
-                }
-            
-            # Direct lookup for source and target nodes
-            if from_var in node_vars:
-                src_props = node_vars[from_var]['props']
-                src_type = node_vars[from_var]['type']
-                
-                for node in self.db.nodes.values():
-                    matches = True
-                    # Check type if specified
-                    if src_type and src_type not in node.labels:
-                        matches = False
-                        continue
-                    
-                    # Check all specified properties
-                    for prop_name, prop_value in src_props.items():
-                        if node.properties.get(prop_name) != prop_value:
-                            matches = False
-                            break
-                    
-                    if matches:
-                        src_nodes.append(node)
-                        logging.debug(f"Found source node {from_var}: {node.properties}")
-            
-            if to_var in node_vars:
-                dst_props = node_vars[to_var]['props']
-                dst_type = node_vars[to_var]['type']
-                
-                for node in self.db.nodes.values():
-                    matches = True
-                    # Check type if specified
-                    if dst_type and dst_type not in node.labels:
-                        matches = False
-                        continue
-                    
-                    # Check all specified properties
-                    for prop_name, prop_value in dst_props.items():
-                        if node.properties.get(prop_name) != prop_value:
-                            matches = False
-                            break
-                    
-                    if matches:
-                        dst_nodes.append(node)
-                        logging.debug(f"Found target node {to_var}: {node.properties}")
-            
-            # Debug the found nodes
-            logging.debug(f"Found {len(src_nodes)} source nodes for {from_var}")
-            logging.debug(f"Found {len(dst_nodes)} target nodes for {to_var}")
+            src_nodes = variable_nodes[from_var]
+            dst_nodes = variable_nodes[to_var]
             
             # Create relationships between matched nodes
             created_rels = []
             
-            # For each source and target node combination
             for source_node in src_nodes:
                 for target_node in dst_nodes:
-                    # Skip self-relationships
                     if source_node.id == target_node.id:
                         continue
                     
-                    # Create the relationship
-                    logging.debug(f"Creating relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
-                    rel = self.db.create_relationship(source_node, target_node, rel_type, rel_props)
-                    created_rels.append(rel)
-                    logging.debug(f"Created relationship: {source_node.properties} -[{rel_type}]-> {target_node.properties}")
-                    
-                    # Log operation if in transaction
-                    if self.active_transaction:
-                        self.transaction.log_operation("CREATE_RELATIONSHIP", {
-                            "relationship_id": rel.id,
-                            "source_id": source_node.id,
-                            "target_id": target_node.id,
-                            "type": rel_type,
-                            "properties": rel_props
-                        })
+                    rel_id = str(uuid.uuid4())
+                    self.transaction.log_operation("CREATE_RELATIONSHIP", {
+                        "relationship_id": rel_id,
+                        "source_id": source_node.id,
+                        "target_id": target_node.id,
+                        "type": rel_type,
+                        "properties": rel_props
+                    })
+                    created_rels.append(rel_id)
             
-            # Return a message about successfully created relationships
             if created_rels:
-                logging.debug(f"Created {len(created_rels)} relationships of type {rel_type}")
-                
-                # Just return a confirmation message instead of nodes
                 return [{"success": f"Created {len(created_rels)} relationships"}]
             else:
-                # If no relationships created, check why
-                if len(src_nodes) == 0:
-                    logging.debug(f"No source nodes found for variable {from_var}")
-                if len(dst_nodes) == 0:
-                    logging.debug(f"No target nodes found for variable {to_var}")
-                
-                # Return empty result
                 return [{"message": "No relationships created"}]
         
-        # If we're here, it's an invalid query
         raise ValueError(f"Invalid CREATE query: {query}")
-        
+
+    # ... [rest of the methods remain unchanged] ...
     def _find_nodes_for_match(self, match_pattern):
         """Find nodes matching a MATCH pattern"""
         # Extract individual node patterns

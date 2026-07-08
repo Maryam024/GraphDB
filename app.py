@@ -25,29 +25,11 @@ def initialize_example_db():
     
     logging.debug("Creating example database")
     
-    # First create all nodes
-    alice = graph_db.create_node(["Person"], {"name": "Alice", "age": 30})
-    bob = graph_db.create_node(["Person"], {"name": "Bob", "age": 40})
-    charlie = graph_db.create_node(["Person"], {"name": "Charlie", "age": 25})
-    dave = graph_db.create_node(["Person"], {"name": "Dave", "age": 35})
-    matrix = graph_db.create_node(["Movie"], {"title": "The Matrix", "year": 1999})
-    inception = graph_db.create_node(["Movie"], {"title": "Inception", "year": 2010})
+   
     
     logging.debug(f"Created {len(graph_db.nodes)} nodes")
     
-    # Then create relationships directly
-    rel1 = graph_db.create_relationship(alice, bob, "KNOWS", {"since": 2015})
-    rel2 = graph_db.create_relationship(bob, charlie, "KNOWS", {"since": 2018})
-    rel3 = graph_db.create_relationship(alice, matrix, "WATCHED", {"rating": 5})
-    rel4 = graph_db.create_relationship(bob, inception, "WATCHED", {"rating": 4})
-    rel5 = graph_db.create_relationship(bob, matrix, "WATCHED", {"rating": 3})
-    rel6 = graph_db.create_relationship(charlie, matrix, "WATCHED", {"rating": 4})
     
-    # Create a FRIEND relationship
-    friend_rel = graph_db.create_relationship(alice, bob, "FRIEND", {"since": 2010})
-    
-    # Create a dummy Dave for testing
-    dave = graph_db.create_node(["Person"], {"name": "Dave", "age": 35})
     
     logging.debug(f"Created {len(graph_db.relationships)} relationships")
     

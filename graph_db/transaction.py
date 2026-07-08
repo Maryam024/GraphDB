@@ -5,6 +5,9 @@ import copy
 import threading
 import time
 from .database import GraphDatabase
+import uuid
+from .models import Node, Relationship  # Adjust the import path based on your project structure
+
 
 # Global transaction lock for concurrency control
 transaction_lock = threading.RLock()
@@ -28,14 +31,7 @@ class ConstraintViolationError(TransactionError):
     pass
 
 class Transaction:
-    """
-    Transaction management for graph database operations with ACID properties:
-    - Atomicity: All operations succeed or all fail (guaranteed by snapshot and rollback)
-    - Consistency: Database remains valid after transaction (enforced by constraints)
-    - Isolation: Transactions don't interfere with each other (managed by locks)
-    - Durability: Committed changes are permanently stored (via JSON persistence)
-    """
-    # Class-level active transactions tracking for deadlock prevention
+   
     active_transactions = {}
     tx_id_counter = 0
     tx_counter_lock = threading.Lock()
@@ -81,34 +77,87 @@ class Transaction:
             return True
     
     def log_operation(self, operation, details):
-        """Log an operation in the current transaction"""
+        """Log an operation to be performed when the transaction commits"""
         if not self.is_active:
-            raise TransactionError("No active transaction")
-        
-        # Track modified objects for conflict detection
-        if 'node_id' in details:
-            self.modified_nodes.add(details['node_id'])
-        if 'relationship_id' in details:
-            self.modified_rels.add(details['relationship_id'])
-        
-        # Check constraints for node operations
-        if operation == 'CREATE_NODE' and not self._check_constraints(details):
-            self.rollback()
-            raise ConstraintViolationError(f"Node creation would violate constraints")
-        
-        # Handle constraint operations
-        if operation == 'CREATE_CONSTRAINT':
-            try:
-                # Validate that no existing data violates the constraint
-                self._validate_constraint_creation(details.get('label'), details.get('property'))
-            except Exception as e:
-                self.rollback()
-                raise ConstraintViolationError(f"Cannot create constraint: {str(e)}")
+            raise TransactionError("Cannot perform operations outside of an active transaction")
             
-        # Add operation to log
+        # Validate operation types
+        valid_operations = {
+            'CREATE_NODE', 'DELETE_NODE', 'UPDATE_NODE',
+            'CREATE_RELATIONSHIP', 'DELETE_RELATIONSHIP', 'UPDATE_RELATIONSHIP',
+            'CREATE_CONSTRAINT', 'DROP_CONSTRAINT',
+            'CREATE_INDEX', 'DROP_INDEX'
+        }
+        if operation not in valid_operations:
+            raise TransactionError(f"Invalid operation type: {operation}")
+            
+        # Check constraints for relevant operations
+        if operation in ('CREATE_NODE', 'UPDATE_NODE'):
+            if not self._check_constraints(details):
+                raise ConstraintViolationError("Operation would violate constraints")
+        
+        # Check for uniqueness violations
+        if operation == 'CREATE_CONSTRAINT':
+            self._validate_constraint_creation(details.get('label'), details.get('property'))
+        
         self.log.append({"operation": operation, "details": details})
-        logging.debug(f"Transaction {self.tx_id} log: {operation} - {details}")
+        
+    def commit(self):
+        """Commit the transaction by applying all logged operations"""
+        with transaction_lock:
+            if not self.is_active:
+                raise TransactionError("No active transaction to commit")
+                
+            try:
+                # Apply all operations in order
+                self._apply_operations()
+                
+                # Persist to disk
+                self._save_database_to_disk()
+                
+                # Clear transaction state
+                self._cleanup()
+                
+                return {"status": "success", "message": "Transaction committed"}
+                
+            except Exception as e:
+                # On any error, rollback and re-raise
+                self._cleanup()
+                raise e
+                
+    def rollback(self):
+        """Rollback the transaction by discarding all changes"""
+        with transaction_lock:
+            if not self.is_active:
+                raise TransactionError("No active transaction to rollback")
+                
+            try:
+                # Restore from snapshot
+                if self.snapshot:
+                    self.db.nodes = self.snapshot["nodes"]
+                    self.db.relationships = self.snapshot["relationships"]
+                    self.db.constraints = self.snapshot["constraints"]
+                    self.db.indexed_properties = self.snapshot.get("indexed_properties", [])
+                    self.db.indexes = self.snapshot.get("indexes", {})
+                
+                # Clear transaction state
+                self._cleanup()
+                
+                return {"status": "success", "message": "Transaction rolled back"}
+                
+            except Exception as e:
+                logging.error(f"Error during rollback: {str(e)}")
+                self._cleanup()
+                raise TransactionError("Failed to rollback transaction")
     
+    def _cleanup(self):
+        """Clean up transaction state"""
+        self.is_active = False
+        self.log = []
+        self.tx_id = None
+        self.snapshot = None
+        if self.tx_id in Transaction.active_transactions:
+            del Transaction.active_transactions[self.tx_id]
     def _check_constraints(self, details):
         """Verify that an operation doesn't violate constraints"""
         # For node creation/update, check uniqueness constraints
@@ -150,113 +199,65 @@ class Transaction:
             raise ConstraintViolationError(error_msg)
     
     def _apply_operations(self):
-        """Apply all operations in the log to the database"""
+       
+        if not self.is_active:
+            raise TransactionError("Cannot apply operations without an active transaction.")
+        
         for entry in self.log:
             operation = entry['operation']
             details = entry['details']
-            
-            # Apply each operation based on its type
-            if operation == 'CREATE_CONSTRAINT':
-                label = details.get('label')
-                property_name = details.get('property')
-                constraint_type = details.get('type', 'UNIQUE')
-                
-                if constraint_type == 'UNIQUE':
-                    # Add the constraint directly to the database
-                    self.db.add_unique_constraint(label, property_name)
-                    logging.debug(f"Applied CREATE_CONSTRAINT: {label}.{property_name} IS UNIQUE")
-            
+
+            if operation == 'CREATE_NODE':
+                node = Node(
+                    labels=details.get('labels', []),
+                    properties=details.get('properties', {})
+                )
+                node.id = details['node_id']
+                self.db.add_node(node)
+
+            elif operation == 'DELETE_NODE':
+                self.db.delete_node(details['node_id'])
+
+            elif operation == 'CREATE_RELATIONSHIP':
+                source = self.db.nodes.get(details['source_id'])
+                target = self.db.nodes.get(details['target_id'])
+                if source and target:
+                    rel = Relationship(
+                        source,
+                        target,
+                        type_=details['type'],
+                        properties=details.get('properties', {})
+                    )
+                    rel.id = details.get('relationship_id', str(uuid.uuid4()))
+                    self.db.add_relationship(rel)
+
+            elif operation == 'CREATE_CONSTRAINT':
+                self.db.add_unique_constraint(
+                    details['label'],
+                    details['property']
+                )
+
             elif operation == 'DROP_CONSTRAINT':
-                label = details.get('label')
-                property_name = details.get('property')
-                constraint_type = details.get('type', 'UNIQUE')
-                
-                if constraint_type == 'UNIQUE':
-                    # Remove the constraint from the database
-                    self.db.drop_constraint(label, property_name)
-                    logging.debug(f"Applied DROP_CONSTRAINT: {label}.{property_name} IS UNIQUE")
-            
+                self.db.drop_constraint(
+                    details['label'],
+                    details['property']
+                )
+
             elif operation == 'CREATE_INDEX':
-                label = details.get('label')
-                property_name = details.get('property')
-                
-                # Create the index
-                self.db.create_index(label, property_name)
-                logging.debug(f"Applied CREATE_INDEX: {label}.{property_name}")
-            
+                # Placeholder for actual index creation logic
+                pass  # TODO: implement index creation logic
+
             elif operation == 'DROP_INDEX':
-                label = details.get('label')
-                property_name = details.get('property')
-                
-                # Drop the index
-                self.db.drop_index(label, property_name)
-                logging.debug(f"Applied DROP_INDEX: {label}.{property_name}")
+                # Placeholder for actual index dropping logic
+                pass  # TODO: implement index dropping logic
+
+            else:
+                raise TransactionError(f"Unsupported operation: {operation}")
+
     
-    def commit(self):
-        """Commit the transaction by persisting changes to disk"""
-        with transaction_lock:
-            if not self.is_active:
-                raise TransactionError("No active transaction to commit")
-            
-            try:
-                # Verify constraints again before committing (for Consistency)
-                for entry in self.log:
-                    operation = entry['operation']
-                    details = entry['details']
-                    
-                    # For node operations, validate against constraints
-                    if operation in ['CREATE_NODE', 'UPDATE_NODE'] and not self._check_constraints(details):
-                        self.rollback()
-                        raise ConstraintViolationError("Cannot commit - constraint violation")
-                    
-                    # For constraint creation, validate again
-                    if operation == 'CREATE_CONSTRAINT':
-                        try:
-                            self._validate_constraint_creation(details.get('label'), details.get('property'))
-                        except Exception as e:
-                            self.rollback()
-                            raise ConstraintViolationError(f"Cannot commit constraint creation: {str(e)}")
-                
-                # Apply operations for constraints and indexes
-                self._apply_operations()
-                
-                # Save the database state to a JSON file (for Durability)
-                self._save_database_to_disk()
-                
-                # Reset transaction state
-                self.snapshot = None
-                self.is_active = False
-                if self.tx_id in Transaction.active_transactions:
-                    del Transaction.active_transactions[self.tx_id]
-                    
-                logging.debug(f"Transaction {self.tx_id} committed with {len(self.log)} operations")
-                return True
-            except Exception as e:
-                logging.error(f"Error committing transaction {self.tx_id}: {str(e)}")
-                self.rollback()
-                raise
-    
-    def rollback(self):
-        """Rollback the transaction by restoring the database state from the snapshot"""
-        if not self.is_active:
-            raise ValueError("No active transaction to rollback")
+     
+
         
-        try:
-            if self.snapshot:
-                # Restore database state from snapshot
-                self.db.nodes = self.snapshot["nodes"]
-                self.db.relationships = self.snapshot["relationships"]
-                self.db.constraints = self.snapshot["constraints"]
-            
-            # Reset transaction state
-            self.snapshot = None
-            self.is_active = False
-            logging.debug(f"Transaction rolled back, discarding {len(self.log)} operations")
-            return True
-        except Exception as e:
-            logging.error(f"Error rolling back transaction: {str(e)}")
-            return False
-    
     def _detect_deadlocks(self):
         """Detect potential deadlocks using a timeout approach"""
         # Check if other transactions have been active too long
